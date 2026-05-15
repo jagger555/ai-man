@@ -1,96 +1,29 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-
-type ChatSource = {
-  source: string;
-  text: string;
-  score: number;
-  confidence: number;
-};
-
-type ChatResponse = {
-  session_id: string;
-  cleaned_question: string;
-  answer: string;
-  sources: ChatSource[];
-  confidence: number;
-  reliable: boolean;
-  prompt: string;
-  history_turns_used: number;
-  model_provider: string;
-  model_status: string;
-  record_id: number | null;
-  record_status: string;
-  latency_ms: number;
-};
-
-type ChatRecord = {
-  id: number;
-  session_id: string;
-  original_question: string;
-  cleaned_question: string;
-  answer: string;
-  prompt_text: string;
-  confidence: number;
-  reliable: boolean;
-  history_turns_used: number;
-  source_count: number;
-  sources: ChatSource[];
-  model_provider: string;
-  model_status: string;
-  response_time_ms: number;
-  created_at: string;
-};
-
-type LowConfidenceRecord = ChatRecord & {
-  issue_reason: string;
-  top_score: number;
-};
-
-type FeedbackRecord = {
-  id: number;
-  record_id: number;
-  session_id: string;
-  rating: "helpful" | "unhelpful";
-  feedback_text: string;
-  created_at: string;
-  updated_at: string;
-  original_question: string;
-  answer: string;
-};
-
-type ChatRecordListResponse = {
-  count: number;
-  total_count: number;
-  records: ChatRecord[];
-};
-
-type LowConfidenceListResponse = {
-  count: number;
-  total_count: number;
-  records: LowConfidenceRecord[];
-};
-
-type FeedbackListResponse = {
-  count: number;
-  total_count: number;
-  records: FeedbackRecord[];
-};
-
-type AdminOverview = {
-  total_records: number;
-  today_records: number;
-  average_response_time_ms: number;
-  low_confidence_count: number;
-  real_model_count: number;
-  mock_model_count: number;
-  fallback_count: number;
-};
-
-type ActiveView = "chat" | "admin";
-type ConfidenceFilter = "all" | "high" | "medium" | "low";
-type ReliableFilter = "all" | "reliable" | "unreliable";
-type ModelFilter = "all" | "real" | "mock" | "fallback";
-type FeedbackRating = "helpful" | "unhelpful";
+import type {
+  ActiveView,
+  AdminOverview,
+  ChatRecord,
+  ChatRecordListResponse,
+  ChatResponse,
+  ConfidenceFilter,
+  FeedbackListResponse,
+  FeedbackRating,
+  FeedbackRecord,
+  LowConfidenceListResponse,
+  LowConfidenceRecord,
+  ModelFilter,
+  ReliableFilter,
+} from "./types";
+import {
+  buildAdminStats,
+  formatTimestamp,
+  getConfidenceBand,
+  getModelBucket,
+  getModelLabel,
+  truncate,
+} from "./utils";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { KnowledgeManager } from "./KnowledgeManager";
 
 const sampleQuestions = [
   "灵山大佛有多高？",
@@ -793,6 +726,8 @@ export function App() {
                 )}
               </section>
 
+              <KnowledgeManager />
+
               <section className="filters-panel" aria-label="问答记录筛选">
                 <div className="filter-field filter-span-2">
                   <label htmlFor="keyword-filter">关键词</label>
@@ -1057,123 +992,4 @@ export function App() {
       </section>
     </main>
   );
-}
-
-function buildAdminStats(overview: AdminOverview | null, isLoading: boolean) {
-  if (isLoading && overview === null) {
-    return [
-      {
-        label: "累计问答数",
-        value: "--",
-        helper: "系统已自动落库的问答记录",
-      },
-      {
-        label: "今日问答数",
-        value: "--",
-        helper: "基于 created_at 的当日提问量",
-      },
-      {
-        label: "平均响应时间",
-        value: "--",
-        helper: "当前记录的平均响应耗时",
-      },
-      {
-        label: "低置信度数量",
-        value: "--",
-        helper: "reliable=false 或 confidence<50%",
-      },
-      {
-        label: "真实模型调用数",
-        value: "--",
-        helper: "真实 LLM 成功返回的次数",
-      },
-      {
-        label: "Mock / Fallback",
-        value: "-- / --",
-        helper: "本地 Mock 与异常降级次数",
-      },
-    ];
-  }
-
-  const metrics = overview ?? {
-    total_records: 0,
-    today_records: 0,
-    average_response_time_ms: 0,
-    low_confidence_count: 0,
-    real_model_count: 0,
-    mock_model_count: 0,
-    fallback_count: 0,
-  };
-
-  return [
-    {
-      label: "累计问答数",
-      value: String(metrics.total_records),
-      helper: "系统已自动落库的问答记录",
-    },
-    {
-      label: "今日问答数",
-      value: String(metrics.today_records),
-      helper: "基于 created_at 的当日提问量",
-    },
-    {
-      label: "平均响应时间",
-      value: `${metrics.average_response_time_ms} ms`,
-      helper: "当前记录的平均响应耗时",
-    },
-    {
-      label: "低置信度数量",
-      value: String(metrics.low_confidence_count),
-      helper: "reliable=false 或 confidence<50%",
-    },
-    {
-      label: "真实模型调用数",
-      value: String(metrics.real_model_count),
-      helper: "真实 LLM 成功返回的次数",
-    },
-    {
-      label: "Mock / Fallback",
-      value: `${metrics.mock_model_count} / ${metrics.fallback_count}`,
-      helper: "本地 Mock 与异常降级次数",
-    },
-  ];
-}
-
-function getConfidenceBand(confidence: number): ConfidenceFilter {
-  if (confidence >= 0.75) {
-    return "high";
-  }
-  if (confidence >= 0.5) {
-    return "medium";
-  }
-  return "low";
-}
-
-function getModelBucket(record: ChatRecord): Exclude<ModelFilter, "all"> {
-  if (record.model_status.startsWith("fallback_to_mock:")) {
-    return "fallback";
-  }
-  if (record.model_provider === "mock") {
-    return "mock";
-  }
-  return "real";
-}
-
-function getModelLabel(record: ChatRecord): string {
-  const bucket = getModelBucket(record);
-  if (bucket === "fallback") {
-    return "fallback";
-  }
-  return record.model_provider;
-}
-
-function formatTimestamp(createdAt: string): string {
-  return createdAt.slice(0, 16).replace("T", " ");
-}
-
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return `${text.slice(0, maxLength)}...`;
 }

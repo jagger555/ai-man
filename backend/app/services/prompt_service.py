@@ -26,7 +26,8 @@ def build_prompt(
         "回答风格要像现场导游，先直接回答，再补充一两句游览价值或背景信息。\n\n"
         f"{history_text}"
         f"用户问题：{question}\n\n"
-        f"知识片段：\n{context if context else '无可靠知识片段'}"
+        f"知识片段：\n{context if context else '无可靠知识片段'}\n\n"
+        "回答结束后，提出一个游客可能感兴趣的追问，引导对话继续。"
     )
 
 

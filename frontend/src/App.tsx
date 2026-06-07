@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ActiveView,
   AdminOverview,
@@ -6,6 +6,7 @@ import type {
   ChatRecordListResponse,
   ChatResponse,
   ConfidenceFilter,
+  DashboardData,
   FeedbackListResponse,
   FeedbackRating,
   FeedbackRecord,
@@ -13,6 +14,7 @@ import type {
   LowConfidenceRecord,
   ModelFilter,
   ReliableFilter,
+  VisitorReport,
 } from "./types";
 import {
   buildAdminStats,
@@ -23,7 +25,10 @@ import {
   truncate,
 } from "./utils";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { DashboardPanel } from "./DashboardPanel";
+import { DigitalHumanPanel } from "./DigitalHumanPanel";
 import { KnowledgeManager } from "./KnowledgeManager";
+import { VisitorReportPanel } from "./VisitorReportPanel";
 
 const sampleQuestions = [
   "灵山大佛有多高？",
@@ -37,6 +42,10 @@ export function App() {
   const [response, setResponse] = useState<ChatResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [speechError, setSpeechError] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [isRecognizing, setIsRecognizing] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("chat");
 
   const [records, setRecords] = useState<ChatRecord[]>([]);
@@ -47,6 +56,9 @@ export function App() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState("");
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState("");
 
   const [lowConfidenceRecords, setLowConfidenceRecords] = useState<
     LowConfidenceRecord[]
@@ -59,6 +71,9 @@ export function App() {
   const [feedbackTotalCount, setFeedbackTotalCount] = useState(0);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
+  const [visitorReport, setVisitorReport] = useState<VisitorReport | null>(null);
+  const [visitorReportLoading, setVisitorReportLoading] = useState(false);
+  const [visitorReportError, setVisitorReportError] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState<{
     recordId: number;
     rating: FeedbackRating;
@@ -85,6 +100,15 @@ export function App() {
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
 
   const sessionId = useMemo(() => `web-${Date.now()}`, []);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const silenceTimerRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentAudioUrlRef = useRef<string | null>(null);
 
   const filteredRecords = records.filter((record) => {
     const keyword = keywordFilter.trim().toLowerCase();
@@ -195,6 +219,214 @@ export function App() {
     }
   }, [response?.record_id, feedbackRecords]);
 
+  useEffect(() => {
+    return () => {
+      stopSpeechCapture();
+      stopCurrentAudio();
+    };
+  }, []);
+
+  async function toggleListening() {
+    if (isListening) {
+      stopRecording();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setSpeechError("当前浏览器不支持语音录入");
+      return;
+    }
+
+    setSpeechError("");
+    audioChunksRef.current = [];
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || "audio/wav",
+        });
+        audioChunksRef.current = [];
+        stopSpeechCapture();
+        if (audioBlob.size > 0) {
+          void recognizeSpeech(audioBlob);
+        }
+      };
+
+      setupSilenceDetection(stream);
+      recorder.start();
+      setIsListening(true);
+    } catch (caught) {
+      stopSpeechCapture();
+      setSpeechError(
+        caught instanceof Error ? caught.message : "无法获取麦克风权限",
+      );
+    }
+  }
+
+  function setupSilenceDetection(stream: MediaStream) {
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextClass) {
+      return;
+    }
+
+    const audioContext = new AudioContextClass();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    audioContextRef.current = audioContext;
+    analyserRef.current = analyser;
+
+    const buffer = new Uint8Array(analyser.fftSize);
+    const detectSilence = () => {
+      analyser.getByteTimeDomainData(buffer);
+      let sum = 0;
+      for (const value of buffer) {
+        const normalized = (value - 128) / 128;
+        sum += normalized * normalized;
+      }
+      const volume = Math.sqrt(sum / buffer.length);
+      if (volume < 0.018) {
+        if (silenceTimerRef.current === null) {
+          silenceTimerRef.current = window.setTimeout(() => {
+            stopRecording();
+          }, 2000);
+        }
+      } else if (silenceTimerRef.current !== null) {
+        window.clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      animationFrameRef.current = window.requestAnimationFrame(detectSilence);
+    };
+
+    detectSilence();
+  }
+
+  function stopRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+      return;
+    }
+    stopSpeechCapture();
+  }
+
+  function stopSpeechCapture() {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    void audioContextRef.current?.close();
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    mediaRecorderRef.current = null;
+    setIsListening(false);
+  }
+
+  async function recognizeSpeech(audioBlob: Blob) {
+    setIsRecognizing(true);
+    setSpeechError("");
+
+    try {
+      const formData = new FormData();
+      const extension = audioBlob.type.includes("webm") ? "webm" : "wav";
+      formData.append("audio", audioBlob, `speech.${extension}`);
+      const result = await fetch("/api/speech/recognize", {
+        method: "POST",
+        body: formData,
+      });
+      if (!result.ok) {
+        throw new Error(
+          result.status === 502 ? "语音服务暂不可用" : `语音识别返回 ${result.status}`,
+        );
+      }
+      const payload = (await result.json()) as { text: string };
+      setQuestion(payload.text);
+    } catch (caught) {
+      setSpeechError(caught instanceof Error ? caught.message : "语音识别失败");
+    } finally {
+      setIsRecognizing(false);
+    }
+  }
+
+  async function toggleSpeechPlayback() {
+    if (!response?.answer.trim()) {
+      return;
+    }
+
+    if (isSpeaking) {
+      stopCurrentAudio();
+      return;
+    }
+
+    setSpeechError("");
+    try {
+      const result = await fetch("/api/speech/synthesize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text: response.answer }),
+      });
+      if (!result.ok) {
+        throw new Error(
+          result.status === 502 ? "语音服务暂不可用" : `语音合成返回 ${result.status}`,
+        );
+      }
+
+      const audioBlob = await result.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+      currentAudioUrlRef.current = audioUrl;
+      audio.onended = stopCurrentAudio;
+      audio.onerror = () => {
+        stopCurrentAudio();
+        setSpeechError("音频播放失败");
+      };
+      setIsSpeaking(true);
+      await audio.play();
+    } catch (caught) {
+      stopCurrentAudio();
+      setSpeechError(caught instanceof Error ? caught.message : "语音播报失败");
+    }
+  }
+
+  function stopCurrentAudio() {
+    currentAudioRef.current?.pause();
+    currentAudioRef.current = null;
+    if (currentAudioUrlRef.current) {
+      URL.revokeObjectURL(currentAudioUrlRef.current);
+      currentAudioUrlRef.current = null;
+    }
+    setIsSpeaking(false);
+  }
+
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedQuestion = question.trim();
@@ -272,8 +504,10 @@ export function App() {
     await Promise.all([
       loadRecords(),
       loadOverview(),
+      loadDashboard(),
       loadLowConfidenceRecords(),
       loadFeedbackRecords(),
+      loadVisitorReport(),
     ]);
   }
 
@@ -312,6 +546,26 @@ export function App() {
       setOverviewError(caught instanceof Error ? caught.message : "读取统计信息失败");
     } finally {
       setOverviewLoading(false);
+    }
+  }
+
+  async function loadDashboard() {
+    setDashboardLoading(true);
+    setDashboardError("");
+
+    try {
+      const result = await fetch("/api/admin/dashboard?limit=8");
+      if (!result.ok) {
+        throw new Error(`数据大屏接口返回 ${result.status}`);
+      }
+
+      setDashboard((await result.json()) as DashboardData);
+    } catch (caught) {
+      setDashboardError(
+        caught instanceof Error ? caught.message : "读取数据大屏失败",
+      );
+    } finally {
+      setDashboardLoading(false);
     }
   }
 
@@ -356,6 +610,26 @@ export function App() {
       );
     } finally {
       setFeedbackLoading(false);
+    }
+  }
+
+  async function loadVisitorReport() {
+    setVisitorReportLoading(true);
+    setVisitorReportError("");
+
+    try {
+      const result = await fetch("/api/admin/visitor-report?limit=200");
+      if (!result.ok) {
+        throw new Error(`感受度报告接口返回 ${result.status}`);
+      }
+
+      setVisitorReport((await result.json()) as VisitorReport);
+    } catch (caught) {
+      setVisitorReportError(
+        caught instanceof Error ? caught.message : "读取游客感受度报告失败",
+      );
+    } finally {
+      setVisitorReportLoading(false);
     }
   }
 
@@ -419,18 +693,21 @@ export function App() {
     <main className="app-shell">
       <section className="guide-layout">
         <aside className="digital-human-panel" aria-label="AI 数字人">
-          <div className={isLoading ? "avatar speaking" : "avatar"}>
-            <div className="avatar-face">
-              <span />
-              <span />
-            </div>
-          </div>
           <p className="eyebrow">AI GUIDE</p>
           <h1>灵山胜境数字人导览</h1>
           <p className="summary">
-            基于示范景区公开资料包构建知识库，前台提供游客问答，后台追踪问答质量、
-            会话上下文、游客反馈和模型运行状态。
+            基于示范景区公开资料包构建知识库，前台提供游客问答，并可连接
+            LiveTalking 数字人进行实时口型播报。
           </p>
+          <div className="scenic-signature" aria-label="景区特色">
+            <span>灵山大佛</span>
+            <span>梵宫艺术</span>
+            <span>太湖烟岚</span>
+          </div>
+          <DigitalHumanPanel
+            latestAnswer={response?.answer ?? ""}
+            isAnswerLoading={isLoading}
+          />
         </aside>
 
         <section className="chat-panel" aria-label="景区问答">
@@ -478,12 +755,32 @@ export function App() {
                     </button>
                   ))}
                 </div>
-                <button className="primary-action" type="submit" disabled={isLoading}>
-                  {isLoading ? "检索中..." : "发送问题"}
-                </button>
+                <div className="question-actions">
+                  <button
+                    className="voice-action"
+                    type="button"
+                    onClick={() => void toggleListening()}
+                    disabled={isRecognizing}
+                    title={isListening ? "停止录音" : "语音输入"}
+                    aria-label={isListening ? "停止录音" : "语音输入"}
+                  >
+                    {isListening ? "■" : "●"}
+                  </button>
+                  <button className="primary-action" type="submit" disabled={isLoading}>
+                    {isLoading ? "检索中..." : "发送问题"}
+                  </button>
+                  <span className="speech-status">
+                    {isListening
+                      ? "正在聆听，静音 2 秒后自动识别"
+                      : isRecognizing
+                        ? "正在识别语音..."
+                        : ""}
+                  </span>
+                </div>
               </form>
 
               {error ? <p className="error-message">{error}</p> : null}
+              {speechError ? <p className="error-message">{speechError}</p> : null}
               {feedbackError && activeView === "chat" ? (
                 <p className="error-message">{feedbackError}</p>
               ) : null}
@@ -534,7 +831,18 @@ export function App() {
                     </div>
                   </section>
 
-                  <p>{response.answer}</p>
+                  <div className="answer-body">
+                    <p>{response.answer}</p>
+                    <button
+                      type="button"
+                      className="voice-action playback-action"
+                      onClick={() => void toggleSpeechPlayback()}
+                      title={isSpeaking ? "停止播报" : "语音播报"}
+                      aria-label={isSpeaking ? "停止播报" : "语音播报"}
+                    >
+                      {isSpeaking ? "■" : "▶"}
+                    </button>
+                  </div>
 
                   <section className="feedback-panel" aria-label="游客反馈">
                     <div className="feedback-header">
@@ -640,6 +948,20 @@ export function App() {
                   </article>
                 ))}
               </section>
+
+              <DashboardPanel
+                dashboard={dashboard}
+                isLoading={dashboardLoading}
+                error={dashboardError}
+                onRefresh={() => void loadDashboard()}
+              />
+
+              <VisitorReportPanel
+                report={visitorReport}
+                isLoading={visitorReportLoading}
+                error={visitorReportError}
+                onRefresh={() => void loadVisitorReport()}
+              />
 
               <section className="feedback-stream-panel" aria-label="最近反馈">
                 <div className="low-confidence-header">
@@ -799,14 +1121,18 @@ export function App() {
                     disabled={
                       recordsLoading ||
                       overviewLoading ||
+                      dashboardLoading ||
                       lowConfidenceLoading ||
-                      feedbackLoading
+                      feedbackLoading ||
+                      visitorReportLoading
                     }
                   >
                     {recordsLoading ||
                     overviewLoading ||
+                    dashboardLoading ||
                     lowConfidenceLoading ||
-                    feedbackLoading
+                    feedbackLoading ||
+                    visitorReportLoading
                       ? "刷新中..."
                       : "刷新数据"}
                   </button>

@@ -24,6 +24,13 @@ export type ChatResponse = {
   latency_ms: number;
 };
 
+export type DigitalHumanConfig = {
+  enabled: boolean;
+  base_url: string;
+  avatar: string;
+  voice: string;
+};
+
 export type ChatRecord = {
   id: number;
   session_id: string;
@@ -75,6 +82,123 @@ export type FeedbackListResponse = {
   count: number;
   total_count: number;
   records: FeedbackRecord[];
+};
+
+export type VisitorReportSummary = {
+  total_records: number;
+  feedback_count: number;
+  positive_count: number;
+  neutral_count: number;
+  negative_count: number;
+  positive_rate: number;
+  negative_rate: number;
+  low_confidence_count: number;
+  low_confidence_rate: number;
+  average_confidence: number;
+  top_focus: string;
+};
+
+export type VisitorFocusPoint = {
+  topic: string;
+  count: number;
+  share: number;
+  positive_count: number;
+  negative_count: number;
+  low_confidence_count: number;
+  average_confidence: number;
+  sample_questions: string[];
+  keywords: string[];
+};
+
+export type VisitorSentimentTrend = {
+  date: string;
+  positive_count: number;
+  neutral_count: number;
+  negative_count: number;
+  total_count: number;
+  positive_rate: number;
+  negative_rate: number;
+};
+
+export type VisitorReportSuggestion = {
+  priority: "high" | "medium" | "low";
+  title: string;
+  reason: string;
+  action: string;
+  related_focus: string;
+};
+
+export type VisitorReport = {
+  summary: VisitorReportSummary;
+  focus_points: VisitorFocusPoint[];
+  sentiment_trend: VisitorSentimentTrend[];
+  suggestions: VisitorReportSuggestion[];
+};
+
+export type DashboardSummary = {
+  total_records: number;
+  today_records: number;
+  week_records: number;
+  average_response_time_ms: number;
+  low_confidence_count: number;
+  accuracy_rate: number;
+  feedback_total_count: number;
+  feedback_helpful_count: number;
+  feedback_unhelpful_count: number;
+  feedback_helpful_rate: number;
+};
+
+export type VisitorAnalyticsItem = {
+  label: string;
+  count: number;
+  share: number;
+};
+
+export type VisitorAnalytics = {
+  source_file?: string;
+  sheet_name?: string;
+  total_visits?: number;
+  unique_tourists?: number;
+  average_stay_duration?: number;
+  average_total_cost?: number;
+  average_satisfaction?: number;
+  average_group_size?: number;
+  peak_month?: string;
+  top_attractions?: VisitorAnalyticsItem[];
+  gender_distribution?: VisitorAnalyticsItem[];
+  age_groups?: VisitorAnalyticsItem[];
+};
+
+export type WeeklyServiceTrendPoint = {
+  date: string;
+  service_count: number;
+  low_confidence_count: number;
+  average_response_time_ms: number;
+};
+
+export type PopularQuestion = {
+  question: string;
+  count: number;
+  latest_at: string;
+  average_confidence: number;
+  helpful_count: number;
+  unhelpful_count: number;
+};
+
+export type SatisfactionTrendPoint = {
+  date: string;
+  feedback_count: number;
+  helpful_count: number;
+  unhelpful_count: number;
+  helpful_rate: number;
+};
+
+export type DashboardData = {
+  summary: DashboardSummary;
+  weekly_service_trend: WeeklyServiceTrendPoint[];
+  popular_questions: PopularQuestion[];
+  satisfaction_trend: SatisfactionTrendPoint[];
+  visitor_analytics: VisitorAnalytics;
 };
 
 export type AdminOverview = {

@@ -10,6 +10,8 @@ def test_admin_overview_endpoint_summarizes_model_and_quality_metrics(
     database_path = tmp_path / "chat_records.db"
     monkeypatch.setenv("DATABASE_PATH", str(database_path))
 
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+
     client = TestClient(app)
 
     mock_response = client.post(

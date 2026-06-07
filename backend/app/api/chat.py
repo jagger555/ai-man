@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.api.knowledge import load_knowledge_base
+from app.api.knowledge import get_knowledge_base
 from app.services.answer_service import AnswerService
 
 
@@ -13,12 +13,12 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 class ChatRequest(BaseModel):
     session_id: str = Field(default="default")
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=500)
 
 
 @router.post("/chat")
 def chat(request: ChatRequest):
-    service = AnswerService(load_knowledge_base())
+    service = AnswerService(get_knowledge_base())
     answer = service.answer(
         session_id=request.session_id,
         question=request.question,

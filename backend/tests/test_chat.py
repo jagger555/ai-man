@@ -7,6 +7,7 @@ from app.main import app
 
 
 def test_chat_endpoint_answers_from_default_knowledge_base(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
     knowledge_path = (
         Path(__file__).resolve().parents[2] / "data" / "sample_scenic" / "knowledge.md"
@@ -41,6 +42,7 @@ def test_chat_endpoint_answers_from_default_knowledge_base(monkeypatch):
 
 
 def test_chat_endpoint_returns_low_confidence_for_unrelated_question(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
 
     client = TestClient(app)
@@ -137,6 +139,7 @@ def test_chat_endpoint_falls_back_to_mock_when_real_llm_fails(monkeypatch):
 
 
 def test_chat_endpoint_auto_creates_and_persists_sqlite_record(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
     database_path = tmp_path / "chat_records.db"
     monkeypatch.setenv("DATABASE_PATH", str(database_path))
@@ -180,6 +183,7 @@ def test_chat_endpoint_auto_creates_and_persists_sqlite_record(monkeypatch, tmp_
 
 
 def test_chat_records_endpoint_lists_recent_records(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
     database_path = tmp_path / "chat_records.db"
     monkeypatch.setenv("DATABASE_PATH", str(database_path))

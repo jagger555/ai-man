@@ -35,16 +35,23 @@ class RealGuideLLM(BaseGuideLLM):
             "Content-Type": "application/json",
         }
 
-        response = httpx.post(
-            f"{self._config.base_url}/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=self._config.timeout,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        try:
-            return data["choices"][0]["message"]["content"].strip()
-        except (KeyError, IndexError, TypeError, AttributeError) as exc:
-            raise RuntimeError("Unexpected LLM response payload.") from exc
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = httpx.post(
+                    f"{self._config.base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=self._config.timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"].strip()
+            except (KeyError, IndexError, TypeError, AttributeError) as exc:
+                raise RuntimeError("Unexpected LLM response payload.") from exc
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 2:
+                    import time
+                    time.sleep(0.5 * (2 ** attempt))
+        raise RuntimeError(f"LLM request failed after 3 attempts: {last_exc}") from last_exc

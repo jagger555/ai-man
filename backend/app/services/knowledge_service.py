@@ -12,6 +12,11 @@ from typing import Literal
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
+try:
+    import jieba
+except ImportError:  # pragma: no cover - keeps local tests usable before deps install
+    jieba = None
+
 
 KnowledgeCategory = Literal[
     "guide_script",
@@ -30,6 +35,89 @@ VALID_KNOWLEDGE_CATEGORIES = {
     "other",
 }
 VALID_KNOWLEDGE_STATUSES = {"active", "draft", "archived"}
+
+BASE_SCENIC_TERMS = {
+    "灵山胜境",
+    "灵山大照壁",
+    "五明桥",
+    "佛足坛",
+    "五智门",
+    "菩提大道",
+    "九龙灌浴",
+    "降魔浮雕",
+    "阿育王柱",
+    "百子戏弥勒",
+    "祥符禅寺",
+    "灵山大佛",
+    "佛教文化博览馆",
+    "梵宫",
+    "灵山梵宫",
+    "五印坛城",
+    "曼飞龙塔",
+    "佛手广场",
+    "天下第一掌",
+    "抱佛脚",
+    "拈花湾",
+    "拈花堂",
+    "香月花街",
+    "五灯湖",
+    "鹿鸣谷",
+    "吉祥颂",
+}
+
+QUERY_CLASSIFIERS = {
+    "height": {
+        "triggers": {"多高", "高度", "通高", "总高"},
+        "evidence": {"通高", "总高", "高度", "米", "m"},
+        "boost": 120,
+    },
+    "route": {
+        "triggers": {
+            "路线",
+            "怎么玩",
+            "安排",
+            "推荐",
+            "玩一天",
+            "玩半天",
+            "带老人",
+            "带小孩",
+            "亲子",
+            "拍照",
+            "半日",
+            "一日",
+        },
+        "evidence": {"路线", "游", "一日", "半日", "适用人群", "游览顺序"},
+        "boost": 80,
+    },
+    "location": {
+        "triggers": {"在哪", "在哪里", "怎么去", "位置", "从哪里", "入口"},
+        "evidence": {"位于", "位置", "入口", "具体位置", "坐落于"},
+        "boost": 60,
+    },
+    "ticket": {
+        "triggers": {"门票", "多少钱", "票价", "价格", "优惠"},
+        "evidence": {"票价", "门票", "元", "价格", "免票", "半价票"},
+        "boost": 60,
+    },
+    "schedule": {
+        "triggers": {"几点", "时间", "开放", "什么时候", "开始", "结束", "表演"},
+        "evidence": {"时间", "开放", "开始", "结束", "演出", "表演"},
+        "boost": 60,
+    },
+    "recommend": {
+        "triggers": {"好玩", "特色", "必看", "亮点", "值得看"},
+        "evidence": {"亮点", "特色", "推荐", "最佳体验", "游玩亮点"},
+        "boost": 60,
+    },
+    "culture": {
+        "triggers": {"历史", "渊源", "寓意", "含义", "意义", "象征", "文化"},
+        "evidence": {"历史", "渊源", "寓意", "象征", "代表", "文化内涵", "佛教意义"},
+        "boost": 70,
+    },
+}
+
+_SCENIC_TERMS: set[str] = set(BASE_SCENIC_TERMS)
+_JIEBA_LOADED_TERMS: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -241,6 +329,7 @@ class KnowledgeDocumentStore:
 class KnowledgeBase:
     def __init__(self, chunks: list[KnowledgeChunk]):
         self._chunks = chunks
+        _load_scenic_dict(chunks)
 
     @classmethod
     def from_public_package(cls, package_path: str | Path) -> "KnowledgeBase":
@@ -261,12 +350,19 @@ class KnowledgeBase:
         chunks.extend(build_chunks_from_documents(documents))
         return cls(chunks)
 
-    def search(self, query: str, limit: int = 3) -> list[dict[str, str | int | None]]:
+    def search(
+        self,
+        query: str,
+        limit: int = 3,
+        category: str | None = None,
+    ) -> list[dict[str, str | int | None]]:
         terms = _query_terms(query)
+        _, detected_category = _classify_query(query)
+        category = category or detected_category
         scored: list[tuple[int, KnowledgeChunk]] = []
 
         for chunk in self._chunks:
-            score = _score(chunk.text, terms, query)
+            score = _score(chunk.text, terms, query, category=category)
             if score > 0:
                 scored.append((score, chunk))
 
@@ -477,16 +573,48 @@ def _now_iso() -> str:
 
 
 def _query_terms(query: str) -> set[str]:
-    words = set(re.findall(r"[A-Za-z0-9_\u4e00-\u9fff]+", query.lower()))
+    normalized_query = query.lower().strip()
+    if not normalized_query:
+        return set()
+    if (
+        re.fullmatch(r"[a-z0-9_\-\s]+", normalized_query)
+        and re.search(r"[a-z]", normalized_query)
+        and re.search(r"\d", normalized_query)
+    ):
+        return {re.sub(r"\s+", "", normalized_query)}
+    raw_alnum_tokens = re.findall(r"[A-Za-z0-9_]+", normalized_query)
+    if raw_alnum_tokens and any(
+        re.search(r"[a-z]", token) and re.search(r"\d", token)
+        for token in raw_alnum_tokens
+    ):
+        cjk_chars = {char for char in query if "\u4e00" <= char <= "\u9fff"}
+        return set(raw_alnum_tokens) | cjk_chars
+    words = {
+        word.strip()
+        for word in _cut_query(normalized_query)
+        if word.strip() and not word.isspace()
+    }
+    words.update(raw_alnum_tokens)
     cjk_chars = {char for char in query if "\u4e00" <= char <= "\u9fff"}
     return words | cjk_chars
 
 
-def _score(text: str, terms: set[str], query: str) -> int:
+def _score(
+    text: str,
+    terms: set[str],
+    query: str,
+    *,
+    category: str | None = None,
+) -> int:
     lowered = text.lower()
     score = sum(lowered.count(term) for term in terms if term)
 
-    if _is_height_query(query):
+    if category:
+        score += _category_boost(text, query, category)
+    if category != "route" and _looks_like_route_text(text):
+        score -= 160
+
+    if category == "height":
         if "通高" in text:
             score += 120
         if "总高" in text:
@@ -500,5 +628,115 @@ def _score(text: str, terms: set[str], query: str) -> int:
     return score
 
 
-def _is_height_query(query: str) -> bool:
-    return any(term in query for term in ("多高", "高度", "通高", "总高"))
+def _classify_query(question: str) -> tuple[str, str | None]:
+    normalized_question = question.lower()
+    terms = _query_terms(normalized_question)
+    for category, config in QUERY_CLASSIFIERS.items():
+        triggers = config["triggers"]
+        if any(trigger in normalized_question for trigger in triggers):
+            return "rule", category
+        if terms & triggers:
+            return "rule", category
+    return "llm", None
+
+
+def _category_boost(text: str, query: str, category: str) -> int:
+    config = QUERY_CLASSIFIERS.get(category)
+    if not config:
+        return 0
+
+    evidence_terms = config["evidence"]
+    boost = int(config["boost"])
+    score = 0
+    if any(term in text for term in evidence_terms):
+        score += boost
+    if category == "route" and (
+        "路线" in text or "游览顺序" in text or "适用人群" in text
+    ):
+        score += 40
+    for entity in _SCENIC_TERMS:
+        if len(entity) >= 2 and entity in query and entity in text:
+            score += 40
+    return score
+
+
+def _looks_like_route_text(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "路线名称：",
+            "路线规划：",
+            "游览顺序：",
+            "适用人群：",
+            "预计用时：",
+            "讲解重点：",
+        )
+    )
+
+
+def _load_scenic_dict(chunks: list[KnowledgeChunk]) -> None:
+    candidates = set(BASE_SCENIC_TERMS)
+    for chunk in chunks:
+        if chunk.title:
+            candidates.add(chunk.title)
+        candidates.update(_extract_scenic_terms(chunk.text))
+
+    useful_terms = {
+        term
+        for term in candidates
+        if 2 <= len(term) <= 12 and re.search(r"[\u4e00-\u9fff]", term)
+    }
+    _SCENIC_TERMS.update(useful_terms)
+    _register_jieba_words(useful_terms)
+
+
+def _extract_scenic_terms(text: str) -> set[str]:
+    terms: set[str] = set()
+    for match in re.finditer(r"[\u4e00-\u9fff]{2,12}", text):
+        phrase = match.group(0)
+        for length in range(2, min(6, len(phrase)) + 1):
+            for start in range(0, len(phrase) - length + 1):
+                terms.add(phrase[start : start + length])
+    return terms
+
+
+def _register_jieba_words(terms: set[str]) -> None:
+    if jieba is None:
+        return
+    for term in terms - _JIEBA_LOADED_TERMS:
+        jieba.add_word(term)
+    _JIEBA_LOADED_TERMS.update(terms)
+
+
+def _cut_query(query: str) -> list[str]:
+    if jieba is not None:
+        return list(jieba.lcut(query))
+    return _fallback_cut_query(query)
+
+
+def _fallback_cut_query(query: str) -> list[str]:
+    tokens = re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+", query)
+    result: list[str] = []
+    scenic_terms = sorted(_SCENIC_TERMS, key=len, reverse=True)
+    for token in tokens:
+        if not re.fullmatch(r"[\u4e00-\u9fff]+", token):
+            result.append(token)
+            continue
+
+        cursor = 0
+        while cursor < len(token):
+            matched = next(
+                (
+                    term
+                    for term in scenic_terms
+                    if token.startswith(term, cursor)
+                ),
+                None,
+            )
+            if matched:
+                result.append(matched)
+                cursor += len(matched)
+            else:
+                result.append(token[cursor])
+                cursor += 1
+    return result

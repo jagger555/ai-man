@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 
 from app.core.config import DatabaseConfig, get_database_config
+from app.services.visitor_analytics_service import VisitorAnalyticsService
 
 
 SCHEMA_SQL = """
@@ -280,6 +283,188 @@ class ChatRecordService:
             "feedback_helpful_rate": feedback_helpful_rate,
         }
 
+    def get_dashboard_metrics(self, limit: int = 8) -> dict[str, object]:
+        limit = min(max(limit, 1), 50)
+        self._ensure_database()
+
+        today = date.today()
+        trend_dates = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
+        trend_start = trend_dates[0].isoformat()
+
+        with sqlite3.connect(self._config.path) as connection:
+            connection.row_factory = sqlite3.Row
+
+            summary_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_records,
+                    COALESCE(
+                        SUM(
+                            CASE
+                                WHEN DATE(created_at, 'localtime') = DATE('now', 'localtime')
+                                THEN 1
+                                ELSE 0
+                            END
+                        ),
+                        0
+                    ) AS today_records,
+                    COALESCE(
+                        SUM(
+                            CASE
+                                WHEN DATE(created_at, 'localtime') >= DATE('now', 'localtime', '-6 day')
+                                     AND DATE(created_at, 'localtime') <= DATE('now', 'localtime')
+                                THEN 1
+                                ELSE 0
+                            END
+                        ),
+                        0
+                    ) AS week_records,
+                    COALESCE(ROUND(AVG(response_time_ms)), 0) AS average_response_time_ms,
+                    COALESCE(
+                        SUM(
+                            CASE
+                                WHEN reliable = 0 OR confidence < 0.5 OR source_count = 0
+                                THEN 1
+                                ELSE 0
+                            END
+                        ),
+                        0
+                    ) AS low_confidence_count
+                FROM chat_records
+                """
+            ).fetchone()
+
+            feedback_summary_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS feedback_total_count,
+                    COALESCE(SUM(CASE WHEN rating = 'helpful' THEN 1 ELSE 0 END), 0)
+                        AS feedback_helpful_count,
+                    COALESCE(SUM(CASE WHEN rating = 'unhelpful' THEN 1 ELSE 0 END), 0)
+                        AS feedback_unhelpful_count
+                FROM chat_feedback
+                """
+            ).fetchone()
+
+            weekly_rows = connection.execute(
+                """
+                SELECT
+                    DATE(created_at, 'localtime') AS record_date,
+                    COUNT(*) AS service_count,
+                    COALESCE(
+                        SUM(
+                            CASE
+                                WHEN reliable = 0 OR confidence < 0.5 OR source_count = 0
+                                THEN 1
+                                ELSE 0
+                            END
+                        ),
+                        0
+                    ) AS low_confidence_count,
+                    COALESCE(ROUND(AVG(response_time_ms)), 0) AS average_response_time_ms
+                FROM chat_records
+                WHERE DATE(created_at, 'localtime') >= ?
+                  AND DATE(created_at, 'localtime') <= DATE('now', 'localtime')
+                GROUP BY record_date
+                """,
+                (trend_start,),
+            ).fetchall()
+
+            popular_rows = connection.execute(
+                """
+                SELECT
+                    questions.question AS question,
+                    COUNT(*) AS count,
+                    MAX(questions.created_at) AS latest_at,
+                    COALESCE(ROUND(AVG(questions.confidence), 2), 0) AS average_confidence,
+                    COALESCE(
+                        SUM(CASE WHEN feedback.rating = 'helpful' THEN 1 ELSE 0 END),
+                        0
+                    ) AS helpful_count,
+                    COALESCE(
+                        SUM(CASE WHEN feedback.rating = 'unhelpful' THEN 1 ELSE 0 END),
+                        0
+                    ) AS unhelpful_count
+                FROM (
+                    SELECT
+                        id,
+                        COALESCE(NULLIF(TRIM(cleaned_question), ''), original_question)
+                            AS question,
+                        confidence,
+                        created_at
+                    FROM chat_records
+                ) AS questions
+                LEFT JOIN chat_feedback AS feedback
+                  ON feedback.record_id = questions.id
+                GROUP BY questions.question
+                ORDER BY count DESC, latest_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+            satisfaction_rows = connection.execute(
+                """
+                SELECT
+                    DATE(created_at, 'localtime') AS feedback_date,
+                    COUNT(*) AS feedback_count,
+                    COALESCE(SUM(CASE WHEN rating = 'helpful' THEN 1 ELSE 0 END), 0)
+                        AS helpful_count,
+                    COALESCE(SUM(CASE WHEN rating = 'unhelpful' THEN 1 ELSE 0 END), 0)
+                        AS unhelpful_count
+                FROM chat_feedback
+                WHERE DATE(created_at, 'localtime') >= ?
+                  AND DATE(created_at, 'localtime') <= DATE('now', 'localtime')
+                GROUP BY feedback_date
+                """,
+                (trend_start,),
+            ).fetchall()
+
+        feedback_total_count = int(feedback_summary_row["feedback_total_count"])
+        feedback_helpful_count = int(feedback_summary_row["feedback_helpful_count"])
+        feedback_unhelpful_count = int(feedback_summary_row["feedback_unhelpful_count"])
+
+        weekly_by_date = {row["record_date"]: row for row in weekly_rows}
+        satisfaction_by_date = {row["feedback_date"]: row for row in satisfaction_rows}
+
+        return {
+            "summary": {
+                "total_records": int(summary_row["total_records"]),
+                "today_records": int(summary_row["today_records"]),
+                "week_records": int(summary_row["week_records"]),
+                "average_response_time_ms": int(summary_row["average_response_time_ms"]),
+                "low_confidence_count": int(summary_row["low_confidence_count"]),
+                "accuracy_rate": _load_latest_accuracy_rate(),
+                "feedback_total_count": feedback_total_count,
+                "feedback_helpful_count": feedback_helpful_count,
+                "feedback_unhelpful_count": feedback_unhelpful_count,
+                "feedback_helpful_rate": _safe_rate(
+                    feedback_helpful_count,
+                    feedback_total_count,
+                ),
+            },
+            "weekly_service_trend": [
+                _weekly_trend_item(day, weekly_by_date.get(day.isoformat()))
+                for day in trend_dates
+            ],
+            "popular_questions": [
+                {
+                    "question": row["question"],
+                    "count": int(row["count"]),
+                    "latest_at": row["latest_at"],
+                    "average_confidence": float(row["average_confidence"]),
+                    "helpful_count": int(row["helpful_count"]),
+                    "unhelpful_count": int(row["unhelpful_count"]),
+                }
+                for row in popular_rows
+            ],
+            "satisfaction_trend": [
+                _satisfaction_trend_item(day, satisfaction_by_date.get(day.isoformat()))
+                for day in trend_dates
+            ],
+            "visitor_analytics": VisitorAnalyticsService().get_summary(),
+        }
+
     def save_feedback(
         self,
         *,
@@ -441,6 +626,69 @@ def _row_to_low_confidence_record(row: sqlite3.Row) -> dict[str, object]:
         model_status=str(record["model_status"]),
     )
     return record
+
+
+def _weekly_trend_item(day: date, row: sqlite3.Row | None) -> dict[str, object]:
+    if row is None:
+        return {
+            "date": day.isoformat(),
+            "service_count": 0,
+            "low_confidence_count": 0,
+            "average_response_time_ms": 0,
+        }
+
+    return {
+        "date": day.isoformat(),
+        "service_count": int(row["service_count"]),
+        "low_confidence_count": int(row["low_confidence_count"]),
+        "average_response_time_ms": int(row["average_response_time_ms"]),
+    }
+
+
+def _satisfaction_trend_item(day: date, row: sqlite3.Row | None) -> dict[str, object]:
+    if row is None:
+        return {
+            "date": day.isoformat(),
+            "feedback_count": 0,
+            "helpful_count": 0,
+            "unhelpful_count": 0,
+            "helpful_rate": 0.0,
+        }
+
+    feedback_count = int(row["feedback_count"])
+    helpful_count = int(row["helpful_count"])
+    return {
+        "date": day.isoformat(),
+        "feedback_count": feedback_count,
+        "helpful_count": helpful_count,
+        "unhelpful_count": int(row["unhelpful_count"]),
+        "helpful_rate": _safe_rate(helpful_count, feedback_count),
+    }
+
+
+def _safe_rate(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 2) if denominator > 0 else 0.0
+
+
+def _load_latest_accuracy_rate() -> float:
+    metrics_path = Path(
+        os.getenv(
+            "ACCURACY_METRICS_PATH",
+            str(
+                Path(__file__).resolve().parents[3]
+                / "data"
+                / "runtime"
+                / "accuracy_metrics.json"
+            ),
+        )
+    )
+    if not metrics_path.exists():
+        return 0.0
+    try:
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+        return round(float(payload.get("accuracy_rate", 0.0)), 2)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return 0.0
 
 
 def _infer_issue_reason(

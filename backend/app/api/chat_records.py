@@ -51,3 +51,12 @@ def admin_overview():
         service.get_overview_metrics(),
         media_type="application/json; charset=utf-8",
     )
+
+
+@router.get("/dashboard")
+def admin_dashboard(limit: int = Query(default=8, ge=1, le=50)):
+    service = ChatRecordService()
+    return JSONResponse(
+        service.get_dashboard_metrics(limit=limit),
+        media_type="application/json; charset=utf-8",
+    )

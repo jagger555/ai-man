@@ -5,11 +5,13 @@ type ConnectionState = "idle" | "connecting" | "connected" | "error";
 
 type DigitalHumanPanelProps = {
   latestAnswer: string;
+  latestAnswerKey: string;
   isAnswerLoading: boolean;
 };
 
 export function DigitalHumanPanel({
   latestAnswer,
+  latestAnswerKey,
   isAnswerLoading,
 }: DigitalHumanPanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -18,6 +20,9 @@ export function DigitalHumanPanel({
   const connectionAttemptRef = useRef(0);
   const isConnectingRef = useRef(false);
   const isMountedRef = useRef(false);
+  const pendingAnswerRef = useRef<{ key: string; text: string } | null>(null);
+  const autoAttemptedAnswerKeyRef = useRef("");
+  const spokenAnswerKeyRef = useRef("");
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -38,6 +43,25 @@ export function DigitalHumanPanel({
       closeConnection();
     };
   }, []);
+
+  useEffect(() => {
+    const trimmedAnswer = latestAnswer.trim();
+    if (!trimmedAnswer || !latestAnswerKey) {
+      return;
+    }
+    if (spokenAnswerKeyRef.current === latestAnswerKey) {
+      return;
+    }
+    if (autoAttemptedAnswerKeyRef.current === latestAnswerKey) {
+      return;
+    }
+
+    pendingAnswerRef.current = {
+      key: latestAnswerKey,
+      text: trimmedAnswer,
+    };
+    void flushPendingAnswer();
+  }, [latestAnswer, latestAnswerKey, connectionState, sessionId, isSpeaking]);
 
   async function loadConfigAndConnect(signal?: AbortSignal) {
     try {
@@ -197,8 +221,40 @@ export function DigitalHumanPanel({
   }
 
   async function speakLatestAnswer() {
-    if (!config || !sessionId || !latestAnswer.trim()) {
+    const trimmedAnswer = latestAnswer.trim();
+    if (!trimmedAnswer) {
       return;
+    }
+    const didSpeak = await speakText(trimmedAnswer);
+    if (didSpeak && latestAnswerKey) {
+      spokenAnswerKeyRef.current = latestAnswerKey;
+      pendingAnswerRef.current = null;
+    }
+  }
+
+  async function flushPendingAnswer() {
+    const pendingAnswer = pendingAnswerRef.current;
+    if (
+      !pendingAnswer ||
+      spokenAnswerKeyRef.current === pendingAnswer.key ||
+      connectionState !== "connected" ||
+      !sessionId ||
+      isSpeaking
+    ) {
+      return;
+    }
+
+    pendingAnswerRef.current = null;
+    autoAttemptedAnswerKeyRef.current = pendingAnswer.key;
+    const didSpeak = await speakText(pendingAnswer.text);
+    if (didSpeak) {
+      spokenAnswerKeyRef.current = pendingAnswer.key;
+    }
+  }
+
+  async function speakText(text: string) {
+    if (!config || !sessionId || !text.trim() || isSpeaking) {
+      return false;
     }
 
     setIsSpeaking(true);
@@ -211,7 +267,7 @@ export function DigitalHumanPanel({
         },
         body: JSON.stringify({
           sessionid: sessionId,
-          text: latestAnswer.trim(),
+          text: text.trim(),
           type: "echo",
           interrupt: true,
           tts: config.voice ? { voice: config.voice } : undefined,
@@ -226,9 +282,10 @@ export function DigitalHumanPanel({
         throw new Error(payload.msg || "LiveTalking 拒绝播报请求");
       }
       setStatusMessage("数字人正在播报当前回答");
+      return true;
     } catch (caught) {
-      setConnectionState("error");
       setStatusMessage(caught instanceof Error ? caught.message : "数字人播报失败");
+      return false;
     } finally {
       setIsSpeaking(false);
     }

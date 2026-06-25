@@ -706,6 +706,13 @@ export function App() {
           </div>
           <DigitalHumanPanel
             latestAnswer={response?.answer ?? ""}
+            latestAnswerKey={
+              response
+                ? response.record_id !== null
+                  ? `record-${response.record_id}`
+                  : `${response.session_id}-${response.latency_ms}-${response.answer}`
+                : ""
+            }
             isAnswerLoading={isLoading}
           />
         </aside>

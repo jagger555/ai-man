@@ -18,6 +18,8 @@ def digital_human_config():
             "base_url": config.base_url,
             "avatar": config.avatar,
             "voice": config.voice,
+            "ref_audio": config.ref_audio,
+            "ref_text": config.ref_text,
         },
         media_type="application/json; charset=utf-8",
     )

@@ -29,6 +29,8 @@ export type DigitalHumanConfig = {
   base_url: string;
   avatar: string;
   voice: string;
+  ref_audio: string;
+  ref_text: string;
 };
 
 export type ChatRecord = {

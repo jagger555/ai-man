@@ -42,6 +42,8 @@ class DigitalHumanConfig:
     base_url: str
     avatar: str
     voice: str
+    ref_audio: str
+    ref_text: str
 
 
 @dataclass(frozen=True)
@@ -82,10 +84,13 @@ def get_database_config() -> DatabaseConfig:
 
 
 def get_digital_human_config() -> DigitalHumanConfig:
+    voice = os.getenv("DIGITAL_HUMAN_VOICE", "")
     return DigitalHumanConfig(
         base_url=os.getenv("DIGITAL_HUMAN_BASE_URL", "http://127.0.0.1:8010").rstrip("/"),
         avatar=os.getenv("DIGITAL_HUMAN_AVATAR", ""),
-        voice=os.getenv("DIGITAL_HUMAN_VOICE", ""),
+        voice=voice,
+        ref_audio=os.getenv("DIGITAL_HUMAN_REF_AUDIO", voice),
+        ref_text=os.getenv("DIGITAL_HUMAN_REF_TEXT", ""),
     )
 
 

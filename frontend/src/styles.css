@@ -1930,3 +1930,343 @@ textarea {
     flex-direction: column;
   }
 }
+
+/* Scenic guide redesign */
+:root {
+  --scenic-night: #062927;
+  --scenic-ink: #102f2c;
+  --scenic-rice: #fff7e6;
+  --scenic-mist: #e6eee6;
+  --scenic-brass: #d4a34b;
+  --scenic-red: #9f4738;
+  --scenic-line: rgba(255, 247, 230, 0.28);
+}
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    linear-gradient(90deg, rgba(6, 41, 39, 0.92), rgba(6, 41, 39, 0.38) 48%, rgba(255, 247, 230, 0.88)),
+    url("./assets/lingshan-hero.png") center / cover fixed,
+    #0b3936;
+}
+
+.app-shell::before {
+  opacity: 0.38;
+  background:
+    linear-gradient(90deg, rgba(255, 247, 230, 0.13) 1px, transparent 1px),
+    linear-gradient(rgba(255, 247, 230, 0.08) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to right, #000, transparent 82%);
+}
+
+.app-shell::after {
+  opacity: 0.5;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(212, 163, 75, 0.28), transparent 22%),
+    linear-gradient(180deg, transparent, rgba(6, 41, 39, 0.68));
+  background-size: auto;
+  mask-image: none;
+}
+
+.guide-layout {
+  grid-template-columns: minmax(520px, 1.12fr) minmax(420px, 0.88fr);
+  gap: clamp(18px, 2.4vw, 34px);
+  padding: clamp(18px, 3vw, 38px);
+}
+
+.digital-human-panel,
+.chat-panel {
+  border-radius: 10px;
+  border-color: rgba(255, 247, 230, 0.28);
+}
+
+.digital-human-panel {
+  justify-content: start;
+  min-height: calc(100vh - clamp(36px, 6vw, 76px));
+  padding: clamp(24px, 3vw, 42px);
+  background:
+    linear-gradient(180deg, rgba(6, 41, 39, 0.76), rgba(6, 41, 39, 0.94)),
+    linear-gradient(120deg, rgba(212, 163, 75, 0.16), transparent 42%);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 247, 230, 0.24);
+}
+
+.digital-human-panel::before {
+  right: 18px;
+  top: 6px;
+  color: rgba(255, 247, 230, 0.07);
+  font-size: clamp(116px, 13vw, 220px);
+}
+
+.digital-human-panel::after {
+  left: clamp(24px, 3vw, 42px);
+  right: clamp(24px, 3vw, 42px);
+  bottom: 18px;
+  background: linear-gradient(90deg, transparent, rgba(212, 163, 75, 0.86), transparent);
+}
+
+.digital-human-panel .eyebrow,
+.chat-panel .eyebrow {
+  color: var(--scenic-brass);
+  letter-spacing: 0.16em;
+}
+
+.digital-human-panel h1 {
+  max-width: 660px;
+  margin-bottom: 16px;
+  color: var(--scenic-rice);
+  font-size: clamp(40px, 5.4vw, 78px);
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.summary {
+  max-width: 680px;
+  color: rgba(255, 247, 230, 0.82);
+  font-size: 17px;
+}
+
+.scenic-signature {
+  margin-top: 18px;
+}
+
+.scenic-signature span {
+  border-radius: 6px;
+  border-color: rgba(212, 163, 75, 0.52);
+  color: #fff0c7;
+  background: rgba(255, 247, 230, 0.09);
+}
+
+.digital-human-live-card {
+  flex: 1;
+  align-content: start;
+  margin-top: clamp(22px, 3vh, 34px);
+  padding: clamp(12px, 1.5vw, 18px);
+  border-radius: 10px;
+  border-color: rgba(212, 163, 75, 0.48);
+  background:
+    linear-gradient(180deg, rgba(255, 247, 230, 0.14), rgba(255, 247, 230, 0.04)),
+    rgba(5, 32, 31, 0.72);
+}
+
+.live-stage {
+  min-height: clamp(340px, 45vh, 590px);
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  border-color: rgba(255, 247, 230, 0.18);
+  background:
+    linear-gradient(180deg, rgba(7, 31, 31, 0.04), rgba(7, 31, 31, 0.62)),
+    url("./assets/lingshan-hero.png") center / cover;
+}
+
+.live-video {
+  height: 100%;
+  min-height: clamp(340px, 45vh, 590px);
+  object-fit: cover;
+}
+
+.live-placeholder {
+  color: rgba(255, 247, 230, 0.92);
+  background: linear-gradient(180deg, rgba(6, 41, 39, 0.24), rgba(6, 41, 39, 0.62));
+}
+
+.digital-human-actions {
+  gap: 8px;
+}
+
+.digital-human-actions .primary-action,
+.digital-human-actions .secondary-action {
+  min-height: 40px;
+  border-radius: 6px;
+}
+
+.digital-human-status,
+.digital-human-config {
+  color: rgba(255, 247, 230, 0.74);
+}
+
+.chat-panel {
+  max-height: calc(100vh - clamp(36px, 6vw, 76px));
+  padding: clamp(18px, 2.3vw, 30px);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 239, 0.96), rgba(238, 231, 210, 0.92));
+  color: var(--scenic-ink);
+  box-shadow: 0 26px 72px rgba(7, 31, 29, 0.28);
+}
+
+.panel-heading {
+  align-items: center;
+  border-bottom-color: rgba(16, 47, 44, 0.14);
+}
+
+.panel-heading h2 {
+  color: var(--scenic-ink);
+  font-size: clamp(28px, 3.2vw, 42px);
+  letter-spacing: 0;
+}
+
+.view-toggle {
+  border-radius: 8px;
+  background: rgba(16, 47, 44, 0.08);
+}
+
+.view-toggle button,
+.view-toggle button.active {
+  border-radius: 6px;
+}
+
+.question-form,
+.answer-panel,
+.feedback-panel,
+.feedback-stream-panel,
+.low-confidence-panel,
+.dashboard-panel,
+.visitor-report-panel,
+.filters-panel,
+.records-table-panel,
+.detail-panel {
+  border-radius: 8px;
+}
+
+.question-form {
+  gap: 14px;
+  padding: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 247, 230, 0.86)),
+    radial-gradient(circle at 92% 0%, rgba(212, 163, 75, 0.18), transparent 32%);
+}
+
+.question-form label {
+  color: var(--scenic-ink);
+  font-size: 20px;
+}
+
+textarea {
+  border-radius: 8px;
+  border-color: rgba(16, 47, 44, 0.18);
+  background: rgba(255, 252, 245, 0.94);
+}
+
+.quick-questions button,
+.primary-action,
+.secondary-action,
+.voice-action,
+.feedback-button {
+  border-radius: 6px;
+}
+
+.quick-questions button {
+  color: #244a45;
+  background: rgba(16, 47, 44, 0.08);
+}
+
+.primary-action {
+  background: linear-gradient(135deg, var(--scenic-brass), var(--scenic-red));
+  box-shadow: 0 12px 26px rgba(159, 71, 56, 0.24);
+}
+
+.voice-action {
+  background: linear-gradient(135deg, #0f5f59, var(--scenic-red));
+}
+
+.answer-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 252, 245, 0.98), rgba(247, 239, 224, 0.92));
+}
+
+.answer-meta {
+  margin-bottom: 16px;
+}
+
+.answer-body {
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(230, 238, 230, 0.5);
+}
+
+.answer-body p {
+  font-size: 17px;
+}
+
+.pipeline-disclosure {
+  margin-bottom: 18px;
+  border: 1px solid rgba(16, 47, 44, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 247, 230, 0.62);
+}
+
+.pipeline-disclosure summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  color: #315752;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.pipeline-disclosure .pipeline-panel {
+  margin: 0;
+  padding: 0 14px 14px;
+}
+
+.pipeline-panel div,
+.conversation-bubble,
+.source-item,
+.feedback-panel {
+  border-radius: 8px;
+}
+
+.empty-state {
+  border: 1px solid rgba(16, 47, 44, 0.1);
+  background: rgba(230, 238, 230, 0.72);
+}
+
+@media (max-width: 1100px) {
+  .guide-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .digital-human-panel,
+  .chat-panel {
+    min-height: auto;
+    max-height: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    background:
+      linear-gradient(180deg, rgba(6, 41, 39, 0.86), rgba(255, 247, 230, 0.92) 58%),
+      url("./assets/lingshan-hero.png") center top / auto 58vh no-repeat,
+      #0b3936;
+  }
+
+  .guide-layout {
+    padding: 14px;
+  }
+
+  .digital-human-panel,
+  .chat-panel {
+    padding: 18px;
+  }
+
+  .digital-human-panel h1 {
+    font-size: 36px;
+  }
+
+  .live-stage,
+  .live-video {
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    height: clamp(220px, 66vw, 300px);
+    aspect-ratio: auto;
+  }
+
+  .panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

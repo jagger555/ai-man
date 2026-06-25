@@ -693,11 +693,11 @@ export function App() {
     <main className="app-shell">
       <section className="guide-layout">
         <aside className="digital-human-panel" aria-label="AI 数字人">
-          <p className="eyebrow">AI GUIDE</p>
-          <h1>灵山胜境数字人导览</h1>
+          <p className="eyebrow">灵山胜境 / LIVE GUIDE</p>
+          <h1>灵山胜境 AI 导游</h1>
           <p className="summary">
-            基于示范景区公开资料包构建知识库，前台提供游客问答，并可连接
-            LiveTalking 数字人进行实时口型播报。
+            面向游客的数字人讲解台。提问后由景区知识库生成导游式回答，
+            并自动交给 LiveTalking 数字人进行实时口型播报。
           </p>
           <div className="scenic-signature" aria-label="景区特色">
             <span>灵山大佛</span>
@@ -720,8 +720,8 @@ export function App() {
         <section className="chat-panel" aria-label="景区问答">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">系统视图</p>
-              <h2>{activeView === "chat" ? "游客问答" : "管理后台"}</h2>
+              <p className="eyebrow">游客服务台</p>
+              <h2>{activeView === "chat" ? "问灵山数字导游" : "管理后台"}</h2>
             </div>
             <div className="view-toggle" role="tablist" aria-label="视图切换">
               <button
@@ -744,12 +744,13 @@ export function App() {
           {activeView === "chat" ? (
             <>
               <form onSubmit={submitQuestion} className="question-form">
-                <label htmlFor="question">游客问题</label>
+                <label htmlFor="question">想了解什么？</label>
                 <textarea
                   id="question"
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   rows={4}
+                  placeholder="例如：灵山大佛有多高？梵宫适合安排多久？"
                 />
                 <div className="quick-questions">
                   {sampleQuestions.map((item) => (
@@ -805,38 +806,41 @@ export function App() {
                     <span>模型 {response.model_provider}</span>
                   </div>
 
-                  <section className="pipeline-panel" aria-label="RAG 问答流程">
-                    <div>
-                      <strong>用户问题</strong>
-                      <p>{question}</p>
-                    </div>
-                    <div>
-                      <strong>问题预处理</strong>
-                      <p>{response.cleaned_question}</p>
-                    </div>
-                    <div>
-                      <strong>检索与阈值</strong>
-                      <p>
-                        Top-K {response.sources.length} 条，阈值判断：
-                        {response.reliable ? "通过" : "未通过"}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Prompt 构造</strong>
-                      <p>{truncate(response.prompt, 180)}</p>
-                    </div>
-                    <div>
-                      <strong>模型执行</strong>
-                      <p>{response.model_status}</p>
-                    </div>
-                    <div>
-                      <strong>记录落库</strong>
-                      <p>
-                        {response.record_status}
-                        {response.record_id ? ` / ID ${response.record_id}` : ""}
-                      </p>
-                    </div>
-                  </section>
+                  <details className="pipeline-disclosure">
+                    <summary>查看检索链路和模型状态</summary>
+                    <section className="pipeline-panel" aria-label="RAG 问答流程">
+                      <div>
+                        <strong>用户问题</strong>
+                        <p>{question}</p>
+                      </div>
+                      <div>
+                        <strong>问题预处理</strong>
+                        <p>{response.cleaned_question}</p>
+                      </div>
+                      <div>
+                        <strong>检索与阈值</strong>
+                        <p>
+                          Top-K {response.sources.length} 条，阈值判断：
+                          {response.reliable ? "通过" : "未通过"}
+                        </p>
+                      </div>
+                      <div>
+                        <strong>Prompt 构造</strong>
+                        <p>{truncate(response.prompt, 180)}</p>
+                      </div>
+                      <div>
+                        <strong>模型执行</strong>
+                        <p>{response.model_status}</p>
+                      </div>
+                      <div>
+                        <strong>记录落库</strong>
+                        <p>
+                          {response.record_status}
+                          {response.record_id ? ` / ID ${response.record_id}` : ""}
+                        </p>
+                      </div>
+                    </section>
+                  </details>
 
                   <div className="answer-body">
                     <p>{response.answer}</p>
@@ -940,7 +944,7 @@ export function App() {
                 </article>
               ) : (
                 <div className="empty-state">
-                  选择一个示例问题，或输入你想了解的景区内容。
+                  选择一个示例问题，或直接输入你想了解的灵山胜境内容。
                 </div>
               )}
             </>

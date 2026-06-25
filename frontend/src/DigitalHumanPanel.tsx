@@ -9,6 +9,27 @@ type DigitalHumanPanelProps = {
   isAnswerLoading: boolean;
 };
 
+const connectionStateLabels: Record<ConnectionState, string> = {
+  idle: "待连接",
+  connecting: "连接中",
+  connected: "实时讲解",
+  error: "连接异常",
+};
+
+function getReadableFetchError(caught: unknown, fallback: string) {
+  if (!(caught instanceof Error)) {
+    return fallback;
+  }
+  if (
+    caught.name === "AbortError" ||
+    caught.name === "TypeError" ||
+    caught.message === "Failed to fetch"
+  ) {
+    return fallback;
+  }
+  return caught.message;
+}
+
 export function DigitalHumanPanel({
   latestAnswer,
   latestAnswerKey,
@@ -86,7 +107,9 @@ export function DigitalHumanPanel({
         return;
       }
       setConnectionState("error");
-      setStatusMessage(caught instanceof Error ? caught.message : "读取数字人配置失败");
+      setStatusMessage(
+        getReadableFetchError(caught, "数字人配置读取失败，文本问答仍可使用"),
+      );
     }
   }
 
@@ -168,20 +191,30 @@ export function DigitalHumanPanel({
         throw new Error("浏览器未生成 WebRTC Offer");
       }
 
-      const response = await fetch(`${nextConfig.base_url}/offer`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sdp: localDescription.sdp,
-          type: localDescription.type,
-          avatar: nextConfig.avatar || undefined,
-          refaudio: nextConfig.ref_audio || undefined,
-          reftext: nextConfig.ref_text || undefined,
-        }),
-        signal,
-      });
+      const offerController = new AbortController();
+      const abortOffer = () => offerController.abort();
+      const offerTimeoutId = window.setTimeout(abortOffer, 3000);
+      signal?.addEventListener("abort", abortOffer, { once: true });
+      let response: Response;
+      try {
+        response = await fetch(`${nextConfig.base_url}/offer`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sdp: localDescription.sdp,
+            type: localDescription.type,
+            avatar: nextConfig.avatar || undefined,
+            refaudio: nextConfig.ref_audio || undefined,
+            reftext: nextConfig.ref_text || undefined,
+          }),
+          signal: offerController.signal,
+        });
+      } finally {
+        window.clearTimeout(offerTimeoutId);
+        signal?.removeEventListener("abort", abortOffer);
+      }
 
       if (!response.ok) {
         throw new Error(`LiveTalking /offer 返回 ${response.status}`);
@@ -212,7 +245,9 @@ export function DigitalHumanPanel({
       }
       closeConnection();
       setConnectionState("error");
-      setStatusMessage(caught instanceof Error ? caught.message : "连接数字人失败");
+      setStatusMessage(
+        getReadableFetchError(caught, "未检测到 LiveTalking 服务，文本问答仍可使用"),
+      );
     } finally {
       if (connectionAttemptRef.current === attemptId) {
         isConnectingRef.current = false;
@@ -339,19 +374,37 @@ export function DigitalHumanPanel({
 
   return (
     <section className="digital-human-live-card" aria-label="LiveTalking 数字人">
+      <div className="stage-head">
+        <div>
+          <p className="eyebrow">Digital Human</p>
+          <strong>灵山数字人导游</strong>
+        </div>
+        <span className={`stage-state ${connectionState}`}>
+          <span />
+          {connectionStateLabels[connectionState]}
+        </span>
+      </div>
       <div className="live-stage">
         <video ref={videoRef} autoPlay playsInline muted className="live-video" />
         <audio ref={audioRef} autoPlay />
         {connectionState !== "connected" ? (
           <div className="live-placeholder">
-            <div className={isAnswerLoading ? "avatar speaking" : "avatar"}>
-              <div className="avatar-face">
+            <div className="standby-frame" aria-hidden="true">
+              <div className="standby-orbit">
+                <span />
                 <span />
                 <span />
               </div>
+              <div className={isAnswerLoading ? "standby-avatar speaking" : "standby-avatar"}>
+                <span className="standby-head" />
+                <span className="standby-body" />
+                <span className="standby-wave" />
+              </div>
             </div>
-            <strong>灵山数字人导游</strong>
-            <span>连接 LiveTalking 后展示实时口型与语音</span>
+            <div className="standby-copy">
+              <strong>数字导游待机中</strong>
+              <span>连接 LiveTalking 后显示实时形象、语音与口型</span>
+            </div>
           </div>
         ) : null}
       </div>
@@ -399,6 +452,7 @@ export function DigitalHumanPanel({
           {config.avatar ? ` / 形象 ${config.avatar}` : ""}
           {config.voice ? ` / 声音 ${config.voice}` : ""}
           {config.ref_audio ? ` / 参考音频 ${config.ref_audio}` : ""}
+          {sessionId ? ` / SID ${sessionId}` : ""}
         </p>
       ) : null}
     </section>
@@ -411,12 +465,22 @@ function waitForIceGathering(peerConnection: RTCPeerConnection) {
   }
 
   return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      peerConnection.removeEventListener("icegatheringstatechange", checkState);
+      resolve();
+    };
     const checkState = () => {
       if (peerConnection.iceGatheringState === "complete") {
-        peerConnection.removeEventListener("icegatheringstatechange", checkState);
-        resolve();
+        finish();
       }
     };
+    const timeoutId = window.setTimeout(finish, 1500);
     peerConnection.addEventListener("icegatheringstatechange", checkState);
   });
 }

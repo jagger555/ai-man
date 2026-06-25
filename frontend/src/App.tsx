@@ -31,11 +31,87 @@ import { KnowledgeManager } from "./KnowledgeManager";
 import { VisitorReportPanel } from "./VisitorReportPanel";
 
 const sampleQuestions = [
-  "灵山大佛有多高？",
-  "灵山胜境有什么历史渊源？",
-  "灵山梵宫有哪些特色体验？",
-  "那它有什么寓意？",
+  "九龙灌浴几点开始？",
+  "灵山大佛为什么是核心景点？",
+  "第一次来灵山胜境怎么游玩？",
+  "亲子家庭推荐哪条路线？",
+  "灵山梵宫有什么看点？",
+  "五印坛城适合拍照吗？",
 ];
+
+const scenicTags = [
+  "国家 AAAAA 级景区",
+  "佛教文化朝圣",
+  "太湖山水",
+  "世界佛教论坛永久会址",
+];
+
+const featuredSpots = [
+  {
+    name: "灵山大佛",
+    type: "核心地标",
+    highlight: "88 米露天青铜释迦牟尼立像，登顶可俯瞰太湖。",
+  },
+  {
+    name: "九龙灌浴",
+    type: "动态演艺",
+    highlight: "花开见佛，九龙沐浴，适合首次入园游客观看。",
+  },
+  {
+    name: "灵山梵宫",
+    type: "艺术殿堂",
+    highlight: "佛教艺术与现代科技融合，可观看《吉祥颂》。",
+  },
+  {
+    name: "祥符禅寺",
+    type: "千年古刹",
+    highlight: "小灵山佛教文化根基，适合历史文化讲解。",
+  },
+];
+
+type HeroHeaderProps = {
+  activeView: ActiveView;
+  onViewChange: (view: ActiveView) => void;
+};
+
+function HeroHeader({ activeView, onViewChange }: HeroHeaderProps) {
+  return (
+    <header className="hero-header" aria-label="灵山胜境 AI 数字导游">
+      <div className="brand-mark" aria-hidden="true">
+        <span />
+      </div>
+      <div className="hero-copy">
+        <p className="eyebrow">灵山胜境 AI 数字导游中控台</p>
+        <h1>让数字人替游客讲清每一处灵山</h1>
+        <p>
+          面向游客咨询、路线规划和文化讲解的数字导游屏。前台专注问答和讲解，
+          管理入口收进后台，不干扰游客使用。
+        </p>
+        <div className="tag-row" aria-label="景区标签">
+          {scenicTags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
+        </div>
+      </div>
+      <nav className="admin-entry" aria-label="页面入口">
+        <button
+          type="button"
+          className={activeView === "chat" ? "active" : ""}
+          onClick={() => onViewChange("chat")}
+        >
+          游客导览
+        </button>
+        <button
+          type="button"
+          className={activeView === "admin" ? "active" : ""}
+          onClick={() => onViewChange("admin")}
+        >
+          管理后台
+        </button>
+      </nav>
+    </header>
+  );
+}
 
 export function App() {
   const [question, setQuestion] = useState(sampleQuestions[0]);
@@ -690,20 +766,10 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section className="guide-layout">
-        <aside className="digital-human-panel" aria-label="AI 数字人">
-          <p className="eyebrow">灵山胜境 / LIVE GUIDE</p>
-          <h1>灵山胜境 AI 导游</h1>
-          <p className="summary">
-            面向游客的数字人讲解台。提问后由景区知识库生成导游式回答，
-            并自动交给 LiveTalking 数字人进行实时口型播报。
-          </p>
-          <div className="scenic-signature" aria-label="景区特色">
-            <span>灵山大佛</span>
-            <span>梵宫艺术</span>
-            <span>太湖烟岚</span>
-          </div>
+    <main className="scenic-guide-page">
+      <HeroHeader activeView={activeView} onViewChange={setActiveView} />
+      <section className="main-layout">
+        <section className="left-column" aria-label="AI 数字人讲解台">
           <DigitalHumanPanel
             latestAnswer={response?.answer ?? ""}
             latestAnswerKey={
@@ -715,42 +781,44 @@ export function App() {
             }
             isAnswerLoading={isLoading}
           />
-        </aside>
+          <section className="featured-spots" aria-label="灵山核心景点">
+            <div className="section-kicker">推荐讲解主题</div>
+            <div className="spot-grid">
+              {featuredSpots.map((spot) => (
+                <article key={spot.name} className="spot-card">
+                  <span>{spot.type}</span>
+                  <strong>{spot.name}</strong>
+                  <p>{spot.highlight}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        </section>
 
-        <section className="chat-panel" aria-label="景区问答">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">游客服务台</p>
-              <h2>{activeView === "chat" ? "问灵山数字导游" : "管理后台"}</h2>
-            </div>
-            <div className="view-toggle" role="tablist" aria-label="视图切换">
-              <button
-                type="button"
-                className={activeView === "chat" ? "active" : ""}
-                onClick={() => setActiveView("chat")}
-              >
-                游客问答
-              </button>
-              <button
-                type="button"
-                className={activeView === "admin" ? "active" : ""}
-                onClick={() => setActiveView("admin")}
-              >
-                管理后台
-              </button>
-            </div>
-          </div>
+        <section
+          className="right-column"
+          aria-label={activeView === "chat" ? "游客问答" : "管理后台"}
+        >
 
           {activeView === "chat" ? (
             <>
-              <form onSubmit={submitQuestion} className="question-form">
-                <label htmlFor="question">想了解什么？</label>
+              <form onSubmit={submitQuestion} className="guide-question-panel">
+                <div className="question-panel-head">
+                  <div>
+                    <p className="eyebrow">游客提问</p>
+                    <h2>想了解什么？</h2>
+                  </div>
+                  <span>路线、演出、文化寓意、亲子安排都可以问。</span>
+                </div>
+                <label className="sr-only" htmlFor="question">
+                  输入你想了解的灵山胜境问题
+                </label>
                 <textarea
                   id="question"
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   rows={4}
-                  placeholder="例如：灵山大佛有多高？梵宫适合安排多久？"
+                  placeholder="例如：九龙灌浴几点开始？第一次来灵山胜境怎么游玩？"
                 />
                 <div className="quick-questions">
                   {sampleQuestions.map((item) => (
@@ -775,7 +843,7 @@ export function App() {
                     {isListening ? "■" : "●"}
                   </button>
                   <button className="primary-action" type="submit" disabled={isLoading}>
-                    {isLoading ? "检索中..." : "发送问题"}
+                    {isLoading ? "检索中..." : "请数字人讲解"}
                   </button>
                   <span className="speech-status">
                     {isListening
@@ -794,53 +862,23 @@ export function App() {
               ) : null}
 
               {response ? (
-                <article className="answer-panel">
-                  <div className="answer-meta">
-                    <span>响应 {response.latency_ms} ms</span>
-                    <span>来源 {response.sources.length} 条</span>
-                    <span>置信度 {(response.confidence * 100).toFixed(0)}%</span>
-                    <span>历史 {response.history_turns_used} 轮</span>
-                    <span className={response.reliable ? "reliable" : "unreliable"}>
-                      {response.reliable ? "检索可靠" : "资料不足"}
+                <article className="answer-card">
+                  <div className="answer-card-head">
+                    <div>
+                      <p className="eyebrow">AI 数字导游回答</p>
+                      <h3>导游讲解</h3>
+                    </div>
+                    <span className={response.reliable ? "status-chip reliable" : "status-chip unreliable"}>
+                      {response.reliable ? "资料可信" : "建议人工复核"}
                     </span>
-                    <span>模型 {response.model_provider}</span>
                   </div>
 
-                  <details className="pipeline-disclosure">
-                    <summary>查看检索链路和模型状态</summary>
-                    <section className="pipeline-panel" aria-label="RAG 问答流程">
-                      <div>
-                        <strong>用户问题</strong>
-                        <p>{question}</p>
-                      </div>
-                      <div>
-                        <strong>问题预处理</strong>
-                        <p>{response.cleaned_question}</p>
-                      </div>
-                      <div>
-                        <strong>检索与阈值</strong>
-                        <p>
-                          Top-K {response.sources.length} 条，阈值判断：
-                          {response.reliable ? "通过" : "未通过"}
-                        </p>
-                      </div>
-                      <div>
-                        <strong>Prompt 构造</strong>
-                        <p>{truncate(response.prompt, 180)}</p>
-                      </div>
-                      <div>
-                        <strong>模型执行</strong>
-                        <p>{response.model_status}</p>
-                      </div>
-                      <div>
-                        <strong>记录落库</strong>
-                        <p>
-                          {response.record_status}
-                          {response.record_id ? ` / ID ${response.record_id}` : ""}
-                        </p>
-                      </div>
-                    </section>
-                  </details>
+                  <div className="answer-meta">
+                    <span>响应 {response.latency_ms} ms</span>
+                    <span>参考 {response.sources.length} 条</span>
+                    <span>置信度 {(response.confidence * 100).toFixed(0)}%</span>
+                    <span>上下文 {response.history_turns_used} 轮</span>
+                  </div>
 
                   <div className="answer-body">
                     <p>{response.answer}</p>
@@ -857,7 +895,7 @@ export function App() {
 
                   <section className="feedback-panel" aria-label="游客反馈">
                     <div className="feedback-header">
-                      <strong>这次回答对你有帮助吗？</strong>
+                      <strong>这次回答对游客有帮助吗？</strong>
                       {feedbackStatus?.recordId === response.record_id ? (
                         <span className="panel-note">
                           已反馈：{feedbackStatus.rating === "helpful" ? "有帮助" : "没有帮助"}
@@ -902,54 +940,79 @@ export function App() {
                     />
                   </section>
 
-                  <h3>当前会话记录</h3>
-                  {currentSessionRecordsLoading ? (
-                    <div className="empty-state">正在读取当前会话记录...</div>
-                  ) : currentSessionRecords.length > 0 ? (
-                    <div className="conversation-list">
-                      {currentSessionRecords.map((record) => (
-                        <section key={record.id} className="conversation-turn">
-                          <div className="conversation-bubble user">
-                            <strong>游客</strong>
-                            <p>{record.original_question}</p>
-                          </div>
-                          <div className="conversation-bubble ai">
-                            <strong>数字人</strong>
-                            <p>{record.answer}</p>
-                          </div>
-                        </section>
-                      ))}
+                  <details className="source-evidence-panel">
+                    <summary>
+                      <span>参考依据</span>
+                      <strong>{(response.confidence * 100).toFixed(0)}%</strong>
+                    </summary>
+                    <div className="source-list">
+                      {response.sources.length > 0 ? (
+                        response.sources.map((source, index) => (
+                          <section key={`${source.source}-${index}`} className="source-item">
+                            <strong>
+                              资料 {index + 1} / 匹配分 {source.score} / 置信度{" "}
+                              {(source.confidence * 100).toFixed(0)}%
+                            </strong>
+                            <p>{source.text}</p>
+                            <small>{source.source}</small>
+                          </section>
+                        ))
+                      ) : (
+                        <div className="empty-state">本次回答没有可展示的参考片段。</div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="empty-state">本轮还没有更多会话历史。</div>
-                  )}
+                    <div className="evidence-debug">
+                      <span>模型 {response.model_provider}</span>
+                      <span>{response.model_status}</span>
+                      <span>
+                        {response.record_status}
+                        {response.record_id ? ` / ID ${response.record_id}` : ""}
+                      </span>
+                    </div>
+                  </details>
 
-                  <h3>参考资料</h3>
-                  <div className="source-list">
-                    {response.sources.length > 0 ? (
-                      response.sources.map((source, index) => (
-                        <section key={`${source.source}-${index}`} className="source-item">
-                          <strong>
-                            资料 {index + 1} / 匹配分 {source.score} / 置信度{" "}
-                            {(source.confidence * 100).toFixed(0)}%
-                          </strong>
-                          <p>{source.text}</p>
-                          <small>{source.source}</small>
-                        </section>
-                      ))
+                  <details className="session-trace-panel">
+                    <summary>当前会话记录</summary>
+                    {currentSessionRecordsLoading ? (
+                      <div className="empty-state">正在读取当前会话记录...</div>
+                    ) : currentSessionRecords.length > 0 ? (
+                      <div className="conversation-list">
+                        {currentSessionRecords.map((record) => (
+                          <section key={record.id} className="conversation-turn">
+                            <div className="conversation-bubble user">
+                              <strong>游客</strong>
+                              <p>{record.original_question}</p>
+                            </div>
+                            <div className="conversation-bubble ai">
+                              <strong>数字人</strong>
+                              <p>{record.answer}</p>
+                            </div>
+                          </section>
+                        ))}
+                      </div>
                     ) : (
-                      <div className="empty-state">本次回答没有可展示的参考片段。</div>
+                      <div className="empty-state">本轮还没有更多会话历史。</div>
                     )}
-                  </div>
+                  </details>
                 </article>
               ) : (
-                <div className="empty-state">
-                  选择一个示例问题，或直接输入你想了解的灵山胜境内容。
-                </div>
+                <section className="answer-card empty-answer">
+                  <p className="eyebrow">等待提问</p>
+                  <h3>试试让数字导游先讲一段</h3>
+                  <p>
+                    选择上方快捷问题，或直接输入你想了解的景点、路线和文化背景。
+                    生成答案后，数字人会自动开始播报。
+                  </p>
+                  <div className="empty-prompt-grid" aria-label="提问示例">
+                    <span>演出时间</span>
+                    <span>游览路线</span>
+                    <span>文化典故</span>
+                  </div>
+                </section>
               )}
             </>
           ) : (
-            <section className="admin-panel" aria-label="管理后台">
+            <section className="admin-panel compact-admin" aria-label="管理后台">
               <section className="stats-grid">
                 {stats.map((stat) => (
                   <article key={stat.label} className="stat-card">

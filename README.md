@@ -74,6 +74,35 @@ $env:LLM_MODEL="gpt-4o-mini"
 
 如果真实模型调用失败，后端会自动回退到 `MockGuideLLM`，并在 `/api/chat` 响应里返回 `model_provider=mock` 与 `model_status=fallback_to_mock: ...`。
 
+数字人接入配置：
+
+```powershell
+# 默认使用 LiveTalking 8010 端口；如果 LiveTalking 换端口，这里同步改为对应端口。
+$env:DIGITAL_HUMAN_BASE_URL="http://127.0.0.1:8010"
+$env:DIGITAL_HUMAN_AVATAR=""
+$env:DIGITAL_HUMAN_VOICE="zh-CN-YunxiaNeural"
+$env:DIGITAL_HUMAN_REF_AUDIO="zh-CN-YunxiaNeural"
+$env:DIGITAL_HUMAN_REF_TEXT=""
+```
+
+数字人服务使用本地 LiveTalking 项目，可在该目录启动：
+
+```powershell
+cd D:\Projects\DH\LiveTalking
+python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 --listenport 8010
+```
+
+如需避开本地端口冲突，可以把 LiveTalking 和主项目配置同步改成任意空闲端口，例如：
+
+```powershell
+cd D:\Projects\DH\LiveTalking
+python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 --listenport 8020
+
+$env:DIGITAL_HUMAN_BASE_URL="http://127.0.0.1:8020"
+```
+
+主项目前端会通过 `/api/digital-human/config` 读取配置，自动连接 LiveTalking 的 `/offer` 建立 WebRTC 视频流，并在问答完成后通过 `/human` 自动播报当前回答。未启动 LiveTalking 时，页面会显示重连状态，文本问答、资料来源和游客反馈仍可继续使用。
+
 问答记录数据库会自动初始化，不需要手动创建数据库或建表。默认路径：
 
 ```text

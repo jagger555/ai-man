@@ -32,8 +32,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -S
 # LiveTalking 改用 8020 端口，后端 DIGITAL_HUMAN_BASE_URL 会自动同步
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingPort 8020
 
-# 如果你本地用 quicktalk 模型
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingModel quicktalk
+# 默认会从 D:\Projects\DH 自动找到 LiveTalking；如需指定其它路径
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingPath "D:\Projects\DH"
+
+# 默认使用 LiveTalking README 的 wav2lip 模型，并加载本项目数字人形象 626
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingModel wav2lip -LiveTalkingAvatarId 626
+
+# LiveTalking 默认 max_session=2，避免刷新或开发模式重连时占满单会话
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingMaxSession 2
 
 # 首次运行需要安装依赖时加这个参数
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -InstallDependencies
@@ -128,7 +134,7 @@ $env:LLM_MODEL="gpt-4o-mini"
 ```powershell
 # 默认使用 LiveTalking 8010 端口；如果 LiveTalking 换端口，这里同步改为对应端口。
 $env:DIGITAL_HUMAN_BASE_URL="http://127.0.0.1:8010"
-$env:DIGITAL_HUMAN_AVATAR=""
+$env:DIGITAL_HUMAN_AVATAR="626"
 $env:DIGITAL_HUMAN_VOICE="zh-CN-YunxiaNeural"
 $env:DIGITAL_HUMAN_REF_AUDIO="zh-CN-YunxiaNeural"
 $env:DIGITAL_HUMAN_REF_TEXT=""
@@ -138,16 +144,17 @@ $env:DIGITAL_HUMAN_REF_TEXT=""
 
 ```powershell
 cd D:\Projects\DH\LiveTalking
-python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 --listenport 8010
+python app.py --transport webrtc --model wav2lip --avatar_id 626 --listenport 8010 --max_session 2
 ```
 
 如需避开本地端口冲突，可以把 LiveTalking 和主项目配置同步改成任意空闲端口，例如：
 
 ```powershell
 cd D:\Projects\DH\LiveTalking
-python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 --listenport 8020
+python app.py --transport webrtc --model wav2lip --avatar_id 626 --listenport 8020 --max_session 2
 
 $env:DIGITAL_HUMAN_BASE_URL="http://127.0.0.1:8020"
+$env:DIGITAL_HUMAN_AVATAR="626"
 ```
 
 主项目前端会通过 `/api/digital-human/config` 读取配置，自动连接 LiveTalking 的 `/offer` 建立 WebRTC 视频流，并在问答完成后通过 `/human` 自动播报当前回答。未启动 LiveTalking 时，页面会显示重连状态，文本问答、资料来源和游客反馈仍可继续使用。

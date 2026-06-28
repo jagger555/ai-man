@@ -1,12 +1,13 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
-    [string]$LiveTalkingPath = "D:\Projects\DH\LiveTalking",
+    [string]$LiveTalkingPath = "D:\Projects\DH",
     [int]$LiveTalkingPort = 8010,
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 5173,
     [string]$LiveTalkingModel = "wav2lip",
-    [string]$LiveTalkingAvatarId = "wav2lip256_avatar1",
+    [string]$LiveTalkingAvatarId = "626",
+    [int]$LiveTalkingMaxSession = 2,
     [switch]$SkipLiveTalking,
     [switch]$NoBrowser,
     [switch]$VisibleWindows,
@@ -87,6 +88,28 @@ function Require-Path {
     }
 }
 
+function Resolve-LiveTalkingPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "LiveTalking path is empty"
+    }
+
+    $resolvedPath = (Resolve-Path $Path).Path
+    $directApp = Join-Path $resolvedPath "app.py"
+    if (Test-Path -LiteralPath $directApp) {
+        return $resolvedPath
+    }
+
+    $nestedPath = Join-Path $resolvedPath "LiveTalking"
+    $nestedApp = Join-Path $nestedPath "app.py"
+    if (Test-Path -LiteralPath $nestedApp) {
+        return (Resolve-Path $nestedPath).Path
+    }
+
+    throw "LiveTalking app.py not found under: $Path"
+}
+
 $ScriptRoot = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($ScriptRoot)) {
     $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -107,6 +130,7 @@ Require-Path "Frontend path" $FrontendPath
 
 if (-not $SkipLiveTalking) {
     Require-Path "LiveTalking path" $LiveTalkingPath
+    $LiveTalkingPath = Resolve-LiveTalkingPath $LiveTalkingPath
 }
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -150,7 +174,7 @@ if (-not $SkipLiveTalking) {
     }
     else {
         $liveLog = Join-Path $LogDir "livetalking.log"
-        $liveCommand = "python app.py --transport webrtc --model $(Quote-PS $LiveTalkingModel) --avatar_id $(Quote-PS $LiveTalkingAvatarId) --listenport $LiveTalkingPort 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
+        $liveCommand = "python app.py --transport webrtc --model $(Quote-PS $LiveTalkingModel) --avatar_id $(Quote-PS $LiveTalkingAvatarId) --listenport $LiveTalkingPort --max_session $LiveTalkingMaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
         $liveProcess = Start-ManagedProcess -Name "livetalking" -WorkingDirectory $LiveTalkingPath -Command $liveCommand
         $services += [pscustomobject]@{
             name = "livetalking"
@@ -174,7 +198,7 @@ if (Test-TcpPortOpen "127.0.0.1" $BackendPort) {
 }
 else {
     $backendLog = Join-Path $LogDir "backend.log"
-    $backendCommand = "`$env:DIGITAL_HUMAN_BASE_URL = $(Quote-PS $digitalHumanBaseUrl); python -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 2>&1 | Tee-Object -FilePath $(Quote-PS $backendLog) -Append"
+    $backendCommand = "`$env:DIGITAL_HUMAN_BASE_URL = $(Quote-PS $digitalHumanBaseUrl); `$env:DIGITAL_HUMAN_AVATAR = $(Quote-PS $LiveTalkingAvatarId); python -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 2>&1 | Tee-Object -FilePath $(Quote-PS $backendLog) -Append"
     $backendProcess = Start-ManagedProcess -Name "backend" -WorkingDirectory $BackendPath -Command $backendCommand
     $services += [pscustomobject]@{
         name = "backend"

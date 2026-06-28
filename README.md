@@ -2,6 +2,55 @@
 
 AI 数字人景区导览系统 MVP，面向比赛交付场景，先建立游客问答、知识库、数字人展示和管理后台的项目雏形。
 
+## 一键本地启动
+
+Windows 下可以直接双击项目根目录的：
+
+```text
+start-local.bat
+```
+
+它会依次启动 LiveTalking、后端和前端，并打开游客端页面：
+
+```text
+http://127.0.0.1:5173
+```
+
+如果要在 PowerShell 里启动：
+
+```powershell
+cd D:\Projects\ai-man
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1
+```
+
+常用参数：
+
+```powershell
+# 不启动 LiveTalking，只跑文本问答和前端
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -SkipLiveTalking
+
+# LiveTalking 改用 8020 端口，后端 DIGITAL_HUMAN_BASE_URL 会自动同步
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingPort 8020
+
+# 如果你本地用 quicktalk 模型
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingModel quicktalk
+
+# 首次运行需要安装依赖时加这个参数
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -InstallDependencies
+```
+
+停止本次启动的本地服务：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-local.ps1
+```
+
+运行日志和 PID 文件默认写入系统临时目录：
+
+```text
+%TEMP%\ai-man-local-run
+```
+
 ## Backend
 
 ```powershell

@@ -7,6 +7,7 @@ type DigitalHumanPanelProps = {
   latestAnswer: string;
   latestAnswerKey: string;
   isAnswerLoading: boolean;
+  refreshKey?: number;
 };
 
 const connectionStateLabels: Record<ConnectionState, string> = {
@@ -34,6 +35,7 @@ export function DigitalHumanPanel({
   latestAnswer,
   latestAnswerKey,
   isAnswerLoading,
+  refreshKey = 0,
 }: DigitalHumanPanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -63,7 +65,7 @@ export function DigitalHumanPanel({
       controller.abort();
       closeConnection();
     };
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     const trimmedAnswer = latestAnswer.trim();

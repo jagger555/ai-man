@@ -33,6 +33,43 @@ export type DigitalHumanConfig = {
   ref_text: string;
 };
 
+export type DigitalHumanAvatar = {
+  avatar_id: string;
+  path: string;
+  selected: boolean;
+  ready: boolean;
+  full_image_count: number;
+  face_image_count: number;
+};
+
+export type DigitalHumanAvatarListResponse = {
+  avatar_dir: string;
+  current_avatar: string;
+  avatars: DigitalHumanAvatar[];
+};
+
+export type LiveTalkingEnvelope<T> = {
+  code: number;
+  msg: string;
+  data: T;
+};
+
+export type DigitalHumanAvatarTask = {
+  task_id: string;
+  model_type?: string;
+  avatar_id?: string;
+  status: "pending" | "running" | "completed" | "failed" | string;
+  progress?: number;
+  error_msg?: string;
+  start_time?: number | null;
+  end_time?: number | null;
+  duration?: number | null;
+};
+
+export type DigitalHumanAvatarTaskList = {
+  tasks: DigitalHumanAvatarTask[];
+};
+
 export type ChatRecord = {
   id: number;
   session_id: string;

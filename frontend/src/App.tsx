@@ -29,6 +29,7 @@ import { DashboardPanel } from "./DashboardPanel";
 import { DigitalHumanPanel } from "./DigitalHumanPanel";
 import { KnowledgeManager } from "./KnowledgeManager";
 import { VisitorReportPanel } from "./VisitorReportPanel";
+import { AvatarManager } from "./AvatarManager";
 
 const sampleQuestions = [
   "九龙灌浴几点开始？",
@@ -123,6 +124,7 @@ export function App() {
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("chat");
+  const [digitalHumanRefreshKey, setDigitalHumanRefreshKey] = useState(0);
 
   const [records, setRecords] = useState<ChatRecord[]>([]);
   const [recordsTotalCount, setRecordsTotalCount] = useState(0);
@@ -780,6 +782,7 @@ export function App() {
                 : ""
             }
             isAnswerLoading={isLoading}
+            refreshKey={digitalHumanRefreshKey}
           />
           <section className="featured-spots" aria-label="灵山核心景点">
             <div className="section-kicker">推荐讲解主题</div>
@@ -1035,6 +1038,12 @@ export function App() {
                 isLoading={visitorReportLoading}
                 error={visitorReportError}
                 onRefresh={() => void loadVisitorReport()}
+              />
+
+              <AvatarManager
+                onAvatarSelected={() =>
+                  setDigitalHumanRefreshKey((current) => current + 1)
+                }
               />
 
               <section className="feedback-stream-panel" aria-label="最近反馈">

@@ -10,6 +10,9 @@ type DigitalHumanPanelProps = {
   refreshKey?: number;
 };
 
+const ICE_GATHERING_TIMEOUT_MS = 15000;
+const LIVETALKING_OFFER_TIMEOUT_MS = 15000;
+
 const connectionStateLabels: Record<ConnectionState, string> = {
   idle: "待连接",
   connecting: "连接中",
@@ -182,6 +185,7 @@ export function DigitalHumanPanel({
         return;
       }
       await peerConnection.setLocalDescription(offer);
+      setStatusMessage("正在收集 WebRTC 候选，准备连接 LiveTalking...");
       await waitForIceGathering(peerConnection);
       if (signal?.aborted || !isMountedRef.current) {
         peerConnection.close();
@@ -195,10 +199,11 @@ export function DigitalHumanPanel({
 
       const offerController = new AbortController();
       const abortOffer = () => offerController.abort();
-      const offerTimeoutId = window.setTimeout(abortOffer, 3000);
+      const offerTimeoutId = window.setTimeout(abortOffer, LIVETALKING_OFFER_TIMEOUT_MS);
       signal?.addEventListener("abort", abortOffer, { once: true });
       let response: Response;
       try {
+        setStatusMessage("正在向 LiveTalking 发送 WebRTC Offer...");
         response = await fetch(`${nextConfig.base_url}/offer`, {
           method: "POST",
           headers: {
@@ -247,8 +252,12 @@ export function DigitalHumanPanel({
       }
       closeConnection();
       setConnectionState("error");
+      const fallbackMessage =
+        caught instanceof Error && caught.name === "AbortError"
+          ? "LiveTalking 已启动但 /offer 响应超时，请稍后重试或检查 LiveTalking 控制台日志"
+          : "未检测到 LiveTalking 服务，文本问答仍可使用";
       setStatusMessage(
-        getReadableFetchError(caught, "未检测到 LiveTalking 服务，文本问答仍可使用"),
+        getReadableFetchError(caught, fallbackMessage),
       );
     } finally {
       if (connectionAttemptRef.current === attemptId) {
@@ -461,7 +470,10 @@ export function DigitalHumanPanel({
   );
 }
 
-function waitForIceGathering(peerConnection: RTCPeerConnection) {
+function waitForIceGathering(
+  peerConnection: RTCPeerConnection,
+  timeoutMs = ICE_GATHERING_TIMEOUT_MS,
+) {
   if (peerConnection.iceGatheringState === "complete") {
     return Promise.resolve();
   }
@@ -482,7 +494,7 @@ function waitForIceGathering(peerConnection: RTCPeerConnection) {
         finish();
       }
     };
-    const timeoutId = window.setTimeout(finish, 1500);
+    const timeoutId = window.setTimeout(finish, timeoutMs);
     peerConnection.addEventListener("icegatheringstatechange", checkState);
   });
 }

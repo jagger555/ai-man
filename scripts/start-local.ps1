@@ -8,6 +8,7 @@ param(
     [string]$LiveTalkingModel = "wav2lip",
     [string]$LiveTalkingAvatarId = "626",
     [int]$LiveTalkingMaxSession = 2,
+    [int]$LiveTalkingReadyTimeoutSeconds = 90,
     [switch]$SkipLiveTalking,
     [switch]$NoBrowser,
     [switch]$VisibleWindows,
@@ -46,6 +47,99 @@ function Test-TcpPortOpen {
     }
 }
 
+function Test-HttpReady {
+    param([string]$Url)
+
+    $previousProgressPreference = $ProgressPreference
+    $ProgressPreference = "SilentlyContinue"
+    try {
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
+        return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500)
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $ProgressPreference = $previousProgressPreference
+    }
+}
+
+function Wait-HttpReady {
+    param(
+        [string]$Name,
+        [string]$Url,
+        [int]$TimeoutSeconds
+    )
+
+    Write-Host "Waiting for $Name HTTP readiness: $Url"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-HttpReady $Url) {
+            Write-Host "$Name is ready."
+            return $true
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    return $false
+}
+
+function Get-PortOwnerProcesses {
+    param([int]$Port)
+
+    try {
+        $ownerIds = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+            Select-Object -ExpandProperty OwningProcess -Unique
+    }
+    catch {
+        return @()
+    }
+
+    $owners = @()
+    foreach ($ownerId in $ownerIds) {
+        $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerId" -ErrorAction SilentlyContinue
+        if ($owner) {
+            $owners += $owner
+        }
+    }
+    return $owners
+}
+
+function Test-LiveTalkingProcess {
+    param([object]$ProcessInfo)
+
+    $name = [string]$ProcessInfo.Name
+    $executable = [string]$ProcessInfo.ExecutablePath
+    $commandLine = [string]$ProcessInfo.CommandLine
+    $isPython = $name -ieq "python.exe" -or $executable -match "python"
+    return ($isPython -and $commandLine -match "\bapp\.py\b" -and $commandLine -match "--transport\s+webrtc")
+}
+
+function Stop-StaleLiveTalkingPortOwner {
+    param([int]$Port)
+
+    $owners = @(Get-PortOwnerProcesses -Port $Port)
+    $liveTalkingOwners = @($owners | Where-Object { Test-LiveTalkingProcess -ProcessInfo $_ })
+    if ($liveTalkingOwners.Count -eq 0) {
+        return $false
+    }
+
+    foreach ($owner in $liveTalkingOwners) {
+        Write-Host ("Stopping stale LiveTalking process {0}: {1}" -f $owner.ProcessId, $owner.CommandLine)
+        Stop-Process -Id $owner.ProcessId -Force -ErrorAction Stop
+    }
+
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        if (-not (Test-TcpPortOpen "127.0.0.1" $Port)) {
+            return $true
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    return (-not (Test-TcpPortOpen "127.0.0.1" $Port))
+}
+
 function Start-ManagedProcess {
     param(
         [string]$Name,
@@ -76,6 +170,27 @@ function Start-ManagedProcess {
     }
 
     return Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -WindowStyle $windowStyle -PassThru
+}
+
+function Start-LiveTalkingService {
+    param(
+        [string]$WorkingDirectory,
+        [int]$Port,
+        [string]$Model,
+        [string]$AvatarId,
+        [int]$MaxSession
+    )
+
+    $liveLog = Join-Path $LogDir "livetalking.log"
+    $liveCommand = "python app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
+    $liveProcess = Start-ManagedProcess -Name "livetalking" -WorkingDirectory $WorkingDirectory -Command $liveCommand
+    return [pscustomobject]@{
+        name = "livetalking"
+        pid = if ($liveProcess) { $liveProcess.Id } else { $null }
+        port = $Port
+        log = $liveLog
+        reused = $false
+    }
 }
 
 function Require-Path {
@@ -160,10 +275,12 @@ elseif (-not (Test-Path -LiteralPath (Join-Path $FrontendPath "node_modules"))) 
 
 $services = @()
 $digitalHumanBaseUrl = "http://127.0.0.1:$LiveTalkingPort"
+$liveTalkingReused = $false
 
 if (-not $SkipLiveTalking) {
     if (Test-TcpPortOpen "127.0.0.1" $LiveTalkingPort) {
-        Write-Host "LiveTalking port $LiveTalkingPort is already open. Reusing it."
+        Write-Host "LiveTalking port $LiveTalkingPort is already open. Reusing it instead of starting another copy."
+        $liveTalkingReused = $true
         $services += [pscustomobject]@{
             name = "livetalking"
             pid = $null
@@ -173,15 +290,32 @@ if (-not $SkipLiveTalking) {
         }
     }
     else {
-        $liveLog = Join-Path $LogDir "livetalking.log"
-        $liveCommand = "python app.py --transport webrtc --model $(Quote-PS $LiveTalkingModel) --avatar_id $(Quote-PS $LiveTalkingAvatarId) --listenport $LiveTalkingPort --max_session $LiveTalkingMaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
-        $liveProcess = Start-ManagedProcess -Name "livetalking" -WorkingDirectory $LiveTalkingPath -Command $liveCommand
-        $services += [pscustomobject]@{
-            name = "livetalking"
-            pid = if ($liveProcess) { $liveProcess.Id } else { $null }
-            port = $LiveTalkingPort
-            log = $liveLog
-            reused = $false
+        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+    }
+}
+
+if (-not $SkipLiveTalking -and -not $DryRun) {
+    $readyTimeout = $LiveTalkingReadyTimeoutSeconds
+    if ($liveTalkingReused -and $readyTimeout -gt 30) {
+        $readyTimeout = 30
+    }
+    $liveTalkingReadyUrl = "$digitalHumanBaseUrl/index.html"
+    if (-not (Wait-HttpReady -Name "LiveTalking" -Url $liveTalkingReadyUrl -TimeoutSeconds $readyTimeout)) {
+        $didRestartLiveTalking = $false
+        if ($liveTalkingReused) {
+            Write-Warning "Port $LiveTalkingPort is open but not responding as LiveTalking. Checking whether it is a stale LiveTalking process."
+            if (Stop-StaleLiveTalkingPortOwner -Port $LiveTalkingPort) {
+                Write-Host "Restarting LiveTalking on port $LiveTalkingPort."
+                $services = @($services | Where-Object { $_.name -ne "livetalking" })
+                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+                $didRestartLiveTalking = $true
+                if (-not (Wait-HttpReady -Name "LiveTalking" -Url $liveTalkingReadyUrl -TimeoutSeconds $LiveTalkingReadyTimeoutSeconds)) {
+                    Write-Warning "LiveTalking restarted, but it still did not answer $liveTalkingReadyUrl within $LiveTalkingReadyTimeoutSeconds seconds."
+                }
+            }
+        }
+        if (-not $didRestartLiveTalking) {
+            Write-Warning "Port $LiveTalkingPort is open, but LiveTalking did not answer $liveTalkingReadyUrl within $readyTimeout seconds. If this is not the LiveTalking process, stop that port owner or pass -LiveTalkingPort with another free port."
         }
     }
 }

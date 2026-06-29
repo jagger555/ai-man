@@ -43,6 +43,8 @@ export function DigitalHumanPanel({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const configRef = useRef<DigitalHumanConfig | null>(null);
+  const sessionIdRef = useRef("");
   const connectionAttemptRef = useRef(0);
   const isConnectingRef = useRef(false);
   const isMountedRef = useRef(false);
@@ -55,6 +57,9 @@ export function DigitalHumanPanel({
   const [statusMessage, setStatusMessage] = useState("等待连接 LiveTalking 服务");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
+
+  configRef.current = config;
+  sessionIdRef.current = sessionId;
 
   const canSpeak =
     connectionState === "connected" && sessionId.length > 0 && latestAnswer.trim().length > 0;
@@ -69,6 +74,21 @@ export function DigitalHumanPanel({
       closeConnection();
     };
   }, [refreshKey]);
+
+  useEffect(() => {
+    const handlePageExit = () => {
+      notifySessionInterruptOnExit();
+      closePeerConnection();
+      cleanupMediaElements();
+    };
+
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
+    return () => {
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+    };
+  }, []);
 
   useEffect(() => {
     const trimmedAnswer = latestAnswer.trim();
@@ -356,10 +376,44 @@ export function DigitalHumanPanel({
   }
 
   function closeConnection() {
-    peerConnectionRef.current?.close();
-    peerConnectionRef.current = null;
+    closePeerConnection();
     setSessionId("");
     cleanupMediaElements();
+  }
+
+  function closePeerConnection() {
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    sessionIdRef.current = "";
+  }
+
+  function notifySessionInterruptOnExit() {
+    const currentConfig = configRef.current;
+    const currentSessionId = sessionIdRef.current;
+    if (!currentConfig?.base_url || !currentSessionId) {
+      return;
+    }
+
+    const payload = JSON.stringify({ sessionid: currentSessionId });
+    const endpoint = `${currentConfig.base_url}/interrupt_talk`;
+    if (navigator.sendBeacon) {
+      const queued = navigator.sendBeacon(
+        endpoint,
+        new Blob([payload], { type: "application/json" }),
+      );
+      if (queued) {
+        return;
+      }
+    }
+
+    void fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: payload,
+      keepalive: true,
+    }).catch(() => undefined);
   }
 
   function cleanupMediaElements() {
@@ -457,15 +511,6 @@ export function DigitalHumanPanel({
       </div>
 
       <p className={`digital-human-status ${connectionState}`}>{statusMessage}</p>
-      {config ? (
-        <p className="digital-human-config">
-          服务 {config.base_url}
-          {config.avatar ? ` / 形象 ${config.avatar}` : ""}
-          {config.voice ? ` / 声音 ${config.voice}` : ""}
-          {config.ref_audio ? ` / 参考音频 ${config.ref_audio}` : ""}
-          {sessionId ? ` / SID ${sessionId}` : ""}
-        </p>
-      ) : null}
     </section>
   );
 }

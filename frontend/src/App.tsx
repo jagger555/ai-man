@@ -157,11 +157,8 @@ export function App() {
     rating: FeedbackRating;
   } | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
+  const [isFeedbackNoteOpen, setIsFeedbackNoteOpen] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
-
-  const [currentSessionRecords, setCurrentSessionRecords] = useState<ChatRecord[]>([]);
-  const [currentSessionRecordsLoading, setCurrentSessionRecordsLoading] =
-    useState(false);
 
   const [selectedRecord, setSelectedRecord] = useState<ChatRecord | null>(null);
   const [selectedSessionRecords, setSelectedSessionRecords] = useState<ChatRecord[]>(
@@ -279,6 +276,7 @@ export function App() {
     if (response?.record_id == null) {
       setFeedbackStatus(null);
       setFeedbackText("");
+      setIsFeedbackNoteOpen(false);
       return;
     }
 
@@ -291,9 +289,11 @@ export function App() {
         rating: existing.rating,
       });
       setFeedbackText(existing.feedback_text);
+      setIsFeedbackNoteOpen(false);
     } else {
       setFeedbackStatus(null);
       setFeedbackText("");
+      setIsFeedbackNoteOpen(false);
     }
   }, [response?.record_id, feedbackRecords]);
 
@@ -532,7 +532,7 @@ export function App() {
       }
 
       setResponse((await result.json()) as ChatResponse);
-      await Promise.all([loadAdminData(), loadCurrentSessionRecords()]);
+      await loadAdminData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "问答请求失败");
     } finally {
@@ -570,6 +570,7 @@ export function App() {
         recordId: response.record_id,
         rating,
       });
+      setIsFeedbackNoteOpen(false);
       await Promise.all([loadFeedbackRecords(), loadAdminData()]);
     } catch (caught) {
       setFeedbackError(caught instanceof Error ? caught.message : "提交反馈失败");
@@ -708,26 +709,6 @@ export function App() {
       );
     } finally {
       setVisitorReportLoading(false);
-    }
-  }
-
-  async function loadCurrentSessionRecords() {
-    setCurrentSessionRecordsLoading(true);
-
-    try {
-      const result = await fetch(
-        `/api/admin/chat-records?limit=12&session_id=${encodeURIComponent(sessionId)}`,
-      );
-      if (!result.ok) {
-        throw new Error(`会话记录接口返回 ${result.status}`);
-      }
-
-      const payload = (await result.json()) as ChatRecordListResponse;
-      setCurrentSessionRecords([...payload.records].reverse());
-    } catch {
-      setCurrentSessionRecords([]);
-    } finally {
-      setCurrentSessionRecordsLoading(false);
     }
   }
 
@@ -876,13 +857,6 @@ export function App() {
                     </span>
                   </div>
 
-                  <div className="answer-meta">
-                    <span>响应 {response.latency_ms} ms</span>
-                    <span>参考 {response.sources.length} 条</span>
-                    <span>置信度 {(response.confidence * 100).toFixed(0)}%</span>
-                    <span>上下文 {response.history_turns_used} 轮</span>
-                  </div>
-
                   <div className="answer-body">
                     <p>{response.answer}</p>
                     <button
@@ -894,18 +868,14 @@ export function App() {
                     >
                       {isSpeaking ? "■" : "▶"}
                     </button>
-                  </div>
 
-                  <section className="feedback-panel" aria-label="游客反馈">
-                    <div className="feedback-header">
-                      <strong>这次回答对游客有帮助吗？</strong>
+                    <div className="answer-feedback-bar" aria-label="游客反馈">
+                      <strong>这次回答有帮助吗？</strong>
                       {feedbackStatus?.recordId === response.record_id ? (
                         <span className="panel-note">
                           已反馈：{feedbackStatus.rating === "helpful" ? "有帮助" : "没有帮助"}
                         </span>
                       ) : null}
-                    </div>
-                    <div className="feedback-actions">
                       <button
                         type="button"
                         className={
@@ -930,73 +900,42 @@ export function App() {
                       >
                         没有帮助
                       </button>
+                      <button
+                        type="button"
+                        className={
+                          isFeedbackNoteOpen
+                            ? "feedback-button active"
+                            : "feedback-button"
+                        }
+                        onClick={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
+                      >
+                        补充意见
+                      </button>
                     </div>
-                    <label className="feedback-note" htmlFor="feedback-note">
-                      补充说明
-                    </label>
-                    <textarea
-                      id="feedback-note"
-                      value={feedbackText}
-                      onChange={(event) => setFeedbackText(event.target.value)}
-                      rows={3}
-                      placeholder="可选：补充你觉得还缺什么信息"
-                    />
-                  </section>
-
-                  <details className="source-evidence-panel">
-                    <summary>
-                      <span>参考依据</span>
-                      <strong>{(response.confidence * 100).toFixed(0)}%</strong>
-                    </summary>
-                    <div className="source-list">
-                      {response.sources.length > 0 ? (
-                        response.sources.map((source, index) => (
-                          <section key={`${source.source}-${index}`} className="source-item">
-                            <strong>
-                              资料 {index + 1} / 匹配分 {source.score} / 置信度{" "}
-                              {(source.confidence * 100).toFixed(0)}%
-                            </strong>
-                            <p>{source.text}</p>
-                            <small>{source.source}</small>
-                          </section>
-                        ))
-                      ) : (
-                        <div className="empty-state">本次回答没有可展示的参考片段。</div>
-                      )}
-                    </div>
-                    <div className="evidence-debug">
-                      <span>模型 {response.model_provider}</span>
-                      <span>{response.model_status}</span>
-                      <span>
-                        {response.record_status}
-                        {response.record_id ? ` / ID ${response.record_id}` : ""}
-                      </span>
-                    </div>
-                  </details>
-
-                  <details className="session-trace-panel">
-                    <summary>当前会话记录</summary>
-                    {currentSessionRecordsLoading ? (
-                      <div className="empty-state">正在读取当前会话记录...</div>
-                    ) : currentSessionRecords.length > 0 ? (
-                      <div className="conversation-list">
-                        {currentSessionRecords.map((record) => (
-                          <section key={record.id} className="conversation-turn">
-                            <div className="conversation-bubble user">
-                              <strong>游客</strong>
-                              <p>{record.original_question}</p>
-                            </div>
-                            <div className="conversation-bubble ai">
-                              <strong>数字人</strong>
-                              <p>{record.answer}</p>
-                            </div>
-                          </section>
-                        ))}
+                    {isFeedbackNoteOpen ? (
+                      <div className="feedback-note-popover">
+                        <textarea
+                          id="feedback-note"
+                          value={feedbackText}
+                          onChange={(event) => setFeedbackText(event.target.value)}
+                          rows={3}
+                          placeholder="可选：补充你觉得还缺什么信息"
+                        />
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          onClick={() =>
+                            feedbackStatus
+                              ? void submitFeedback(feedbackStatus.rating)
+                              : undefined
+                          }
+                          disabled={!feedbackStatus || isSubmittingFeedback}
+                        >
+                          {feedbackStatus ? "提交意见" : "先选择评价"}
+                        </button>
                       </div>
-                    ) : (
-                      <div className="empty-state">本轮还没有更多会话历史。</div>
-                    )}
-                  </details>
+                    ) : null}
+                  </div>
                 </article>
               ) : (
                 <section className="answer-card empty-answer">

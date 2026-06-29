@@ -297,6 +297,7 @@ h2 {
   min-height: 260px;
   display: block;
   object-fit: cover;
+  object-position: center top;
   background: transparent;
 }
 
@@ -2064,6 +2065,7 @@ textarea {
   height: 100%;
   min-height: clamp(340px, 45vh, 590px);
   object-fit: cover;
+  object-position: center top;
 }
 
 .live-placeholder {
@@ -2592,6 +2594,7 @@ textarea {
   height: 100%;
   min-height: inherit;
   object-fit: cover;
+  object-position: center top;
   background: transparent;
 }
 

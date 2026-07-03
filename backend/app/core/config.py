@@ -49,9 +49,14 @@ class DigitalHumanConfig:
 @dataclass(frozen=True)
 class SpeechConfig:
     api_key: str
+    workspace_id: str
+    api_host: str
     asr_url: str
+    asr_model: str
     tts_url: str
     tts_voice: str
+    tts_response_format: str
+    tts_sample_rate: int
     timeout: int
 
 
@@ -95,10 +100,23 @@ def get_digital_human_config() -> DigitalHumanConfig:
 
 
 def get_speech_config() -> SpeechConfig:
+    workspace_id = os.getenv("BAILIAN_WORKSPACE_ID", os.getenv("SPEECH_WORKSPACE_ID", ""))
+    api_host = os.getenv("BAILIAN_API_HOST", os.getenv("SPEECH_API_HOST", ""))
+    default_asr_url = f"wss://{api_host}/api-ws/v1/inference" if api_host else ""
+    default_tts_url = (
+        f"wss://{api_host}/api-ws/v1/realtime?model=qwen3-tts-flash-realtime"
+        if api_host
+        else ""
+    )
     return SpeechConfig(
         api_key=os.getenv("BAILIAN_API_KEY", os.getenv("SPEECH_API_KEY", "")),
-        asr_url=os.getenv("BAILIAN_ASR_URL", os.getenv("SPEECH_ASR_URL", "")).rstrip("/"),
-        tts_url=os.getenv("BAILIAN_TTS_URL", os.getenv("SPEECH_TTS_URL", "")).rstrip("/"),
-        tts_voice=os.getenv("BAILIAN_TTS_VOICE", os.getenv("SPEECH_TTS_VOICE", "longxiaochun")),
+        workspace_id=workspace_id,
+        api_host=api_host,
+        asr_url=os.getenv("BAILIAN_ASR_URL", os.getenv("SPEECH_ASR_URL", default_asr_url)).rstrip("/"),
+        asr_model=os.getenv("BAILIAN_ASR_MODEL", os.getenv("SPEECH_ASR_MODEL", "paraformer-realtime-v2")),
+        tts_url=os.getenv("BAILIAN_TTS_URL", os.getenv("SPEECH_TTS_URL", default_tts_url)),
+        tts_voice=os.getenv("BAILIAN_TTS_VOICE", os.getenv("SPEECH_TTS_VOICE", "Cherry")),
+        tts_response_format=os.getenv("BAILIAN_TTS_RESPONSE_FORMAT", os.getenv("SPEECH_TTS_RESPONSE_FORMAT", "wav")),
+        tts_sample_rate=int(os.getenv("BAILIAN_TTS_SAMPLE_RATE", os.getenv("SPEECH_TTS_SAMPLE_RATE", "24000"))),
         timeout=int(os.getenv("SPEECH_TIMEOUT", "30")),
     )

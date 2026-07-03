@@ -3,6 +3,7 @@ import base64
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.speech_service import SpeechService
 
 
 def test_speech_recognize_returns_text(monkeypatch):
@@ -122,3 +123,85 @@ def test_speech_synthesize_accepts_base64_json(monkeypatch):
 
     assert response.status_code == 200
     assert response.content == b"RIFFjson"
+
+
+def test_speech_recognize_supports_websocket(monkeypatch):
+    monkeypatch.setenv("BAILIAN_API_KEY", "test-key")
+    monkeypatch.setenv("BAILIAN_WORKSPACE_ID", "ws-test")
+    monkeypatch.setenv("BAILIAN_ASR_URL", "wss://ws-test.example.com/api-ws/v1/inference")
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.sent = []
+            self.messages = [
+                '{"header":{"event":"task-started"}}',
+                '{"header":{"event":"result-generated"},"payload":{"output":{"text":"灵山大佛"}}}',
+                '{"header":{"event":"result-generated"},"payload":{"output":{"text":"灵山大佛有什么看点"}}}',
+                '{"header":{"event":"task-finished"}}',
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def send(self, message):
+            self.sent.append(message)
+
+        def recv(self, timeout=None):
+            return self.messages.pop(0)
+
+    fake_socket = FakeWebSocket()
+
+    def fake_connect(url, **kwargs):
+        assert url == "wss://ws-test.example.com/api-ws/v1/inference"
+        assert kwargs["additional_headers"]["Authorization"] == "Bearer test-key"
+        assert kwargs["additional_headers"]["X-DashScope-WorkSpace"] == "ws-test"
+        return fake_socket
+
+    monkeypatch.setattr("app.services.speech_service.websocket_connect", fake_connect)
+
+    assert SpeechService().recognize(b"RIFFaudio", "wav") == "灵山大佛有什么看点"
+    assert any(isinstance(message, bytes) for message in fake_socket.sent)
+
+
+def test_speech_synthesize_supports_websocket(monkeypatch):
+    monkeypatch.setenv("BAILIAN_API_KEY", "test-key")
+    monkeypatch.setenv("BAILIAN_TTS_URL", "wss://ws-test.example.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime")
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.sent = []
+            self.messages = [
+                '{"type":"session.created"}',
+                '{"type":"response.created"}',
+                '{"type":"response.audio.delta","delta":"UklGRm9uZQ=="}',
+                '{"type":"response.audio.delta","delta":"UklGRnR3bw=="}',
+                '{"type":"response.audio.done"}',
+                '{"type":"session.finished"}',
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def send(self, message):
+            self.sent.append(message)
+
+        def recv(self, timeout=None):
+            return self.messages.pop(0)
+
+    fake_socket = FakeWebSocket()
+
+    def fake_connect(url, **kwargs):
+        assert url == "wss://ws-test.example.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime"
+        assert kwargs["additional_headers"]["Authorization"] == "Bearer test-key"
+        return fake_socket
+
+    monkeypatch.setattr("app.services.speech_service.websocket_connect", fake_connect)
+
+    assert SpeechService().synthesize("欢迎来到灵山") == b"RIFFoneRIFFtwo"
+    assert any('"type": "session.finish"' in message for message in fake_socket.sent)

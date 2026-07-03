@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import base64
+import json
+import uuid
 from typing import Any
 
 import httpx
+from websockets.sync.client import connect as websocket_connect
 
 from app.core.config import SpeechConfig, get_speech_config
 
@@ -20,6 +23,8 @@ class SpeechService:
         self._ensure_asr_configured()
         if not audio_bytes:
             raise ValueError("audio must not be empty")
+        if self._config.asr_url.startswith("wss://"):
+            return self._recognize_with_websocket(audio_bytes, audio_format)
 
         headers = {"Authorization": f"Bearer {self._config.api_key}"}
         files = {
@@ -53,6 +58,8 @@ class SpeechService:
         normalized_text = text.strip()
         if not normalized_text:
             raise ValueError("text must not be empty")
+        if self._config.tts_url.startswith("wss://"):
+            return self._synthesize_with_websocket(normalized_text)
 
         headers = {
             "Authorization": f"Bearer {self._config.api_key}",
@@ -82,6 +89,150 @@ class SpeechService:
         if not audio:
             raise SpeechServiceError("TTS response did not include audio bytes.")
         return audio
+
+    def _recognize_with_websocket(self, audio_bytes: bytes, audio_format: str) -> str:
+        task_id = str(uuid.uuid4())
+        results: list[str] = []
+        headers = self._websocket_headers()
+        start_event = {
+            "header": {
+                "action": "run-task",
+                "task_id": task_id,
+                "streaming": "duplex",
+            },
+            "payload": {
+                "task_group": "audio",
+                "task": "asr",
+                "function": "recognition",
+                "model": self._config.asr_model,
+                "parameters": {
+                    "format": _normalize_audio_format(audio_format),
+                    "sample_rate": 16000,
+                },
+            },
+        }
+        finish_event = {
+            "header": {
+                "action": "finish-task",
+                "task_id": task_id,
+                "streaming": "duplex",
+            },
+            "payload": {},
+        }
+
+        try:
+            with websocket_connect(
+                self._config.asr_url,
+                additional_headers=headers,
+                open_timeout=self._config.timeout,
+                close_timeout=self._config.timeout,
+            ) as websocket:
+                websocket.send(json.dumps(start_event, ensure_ascii=False))
+                self._wait_for_event(websocket, {"task-started"})
+                websocket.send(audio_bytes)
+                websocket.send(json.dumps(finish_event, ensure_ascii=False))
+
+                while True:
+                    message = websocket.recv(timeout=self._config.timeout)
+                    if isinstance(message, bytes):
+                        continue
+                    event = _load_json_event(message)
+                    text = _extract_text(event)
+                    if text:
+                        results.append(text)
+                    event_name = _event_name(event)
+                    if event_name in {"task-finished", "task-failed"}:
+                        if event_name == "task-failed":
+                            raise SpeechServiceError(f"ASR task failed: {event}")
+                        break
+        except SpeechServiceError:
+            raise
+        except Exception as exc:
+            raise SpeechServiceError(f"ASR WebSocket request failed: {exc}") from exc
+
+        text = _select_final_text(results)
+        if not text:
+            raise SpeechServiceError("ASR response did not include recognized text.")
+        return text
+
+    def _synthesize_with_websocket(self, text: str) -> bytes:
+        audio_chunks: list[bytes] = []
+        headers = self._websocket_headers()
+        session_update = {
+            "type": "session.update",
+            "session": {
+                "mode": "commit",
+                "voice": self._config.tts_voice,
+                "response_format": self._config.tts_response_format,
+                "sample_rate": self._config.tts_sample_rate,
+            },
+        }
+        append_event = {
+            "type": "input_text_buffer.append",
+            "text": text,
+        }
+        commit_event = {"type": "input_text_buffer.commit"}
+        finish_event = {"type": "session.finish"}
+
+        try:
+            with websocket_connect(
+                self._config.tts_url,
+                additional_headers=headers,
+                open_timeout=self._config.timeout,
+                close_timeout=self._config.timeout,
+            ) as websocket:
+                self._wait_for_event(websocket, {"session.created"})
+                websocket.send(json.dumps(session_update, ensure_ascii=False))
+                websocket.send(json.dumps(append_event, ensure_ascii=False))
+                websocket.send(json.dumps(commit_event, ensure_ascii=False))
+
+                while True:
+                    message = websocket.recv(timeout=self._config.timeout)
+                    if isinstance(message, bytes):
+                        audio_chunks.append(message)
+                        continue
+                    event = _load_json_event(message)
+                    event_name = _event_name(event)
+                    if event_name == "response.audio.delta":
+                        audio_delta = event.get("delta") or event.get("audio")
+                        if isinstance(audio_delta, str) and audio_delta.strip():
+                            audio_chunks.append(base64.b64decode(audio_delta))
+                    if event_name in {"response.audio.done", "response.done"}:
+                        websocket.send(json.dumps(finish_event, ensure_ascii=False))
+                    if event_name in {"session.finished", "error"}:
+                        if event_name == "error":
+                            raise SpeechServiceError(f"TTS task failed: {event}")
+                        break
+        except SpeechServiceError:
+            raise
+        except Exception as exc:
+            raise SpeechServiceError(f"TTS WebSocket request failed: {exc}") from exc
+
+        audio = b"".join(audio_chunks)
+        if not audio:
+            raise SpeechServiceError("TTS response did not include audio bytes.")
+        return audio
+
+    def _wait_for_event(self, websocket: Any, event_names: set[str]) -> dict[str, Any]:
+        while True:
+            message = websocket.recv(timeout=self._config.timeout)
+            if isinstance(message, bytes):
+                continue
+            event = _load_json_event(message)
+            event_name = _event_name(event)
+            if event_name in event_names:
+                return event
+            if event_name in {"task-failed", "error"}:
+                raise SpeechServiceError(f"Speech WebSocket task failed: {event}")
+
+    def _websocket_headers(self) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {self._config.api_key}",
+            "user-agent": "ai-man-guide/1.0",
+        }
+        if self._config.workspace_id:
+            headers["X-DashScope-WorkSpace"] = self._config.workspace_id
+        return headers
 
     def _ensure_asr_configured(self) -> None:
         if not self._config.api_key or not self._config.asr_url:
@@ -114,8 +265,19 @@ def _extract_text(payload: dict[str, Any]) -> str:
         payload.get("text"),
         payload.get("transcript"),
         payload.get("result"),
+        payload.get("sentence", {}).get("text")
+        if isinstance(payload.get("sentence"), dict)
+        else None,
         payload.get("output", {}).get("text")
         if isinstance(payload.get("output"), dict)
+        else None,
+        payload.get("payload", {}).get("output", {}).get("text")
+        if isinstance(payload.get("payload"), dict)
+        and isinstance(payload.get("payload", {}).get("output"), dict)
+        else None,
+        payload.get("payload", {}).get("sentence", {}).get("text")
+        if isinstance(payload.get("payload"), dict)
+        and isinstance(payload.get("payload", {}).get("sentence"), dict)
         else None,
     ]
     for candidate in candidates:
@@ -143,7 +305,7 @@ def _extract_audio_bytes(payload: dict[str, Any]) -> bytes:
 
 
 def _content_type_for_format(audio_format: str) -> str:
-    normalized = audio_format.lower().strip(".")
+    normalized = _normalize_audio_format(audio_format)
     if normalized == "mp3":
         return "audio/mpeg"
     if normalized == "webm":
@@ -151,3 +313,42 @@ def _content_type_for_format(audio_format: str) -> str:
     if normalized == "ogg":
         return "audio/ogg"
     return "audio/wav"
+
+
+def _normalize_audio_format(audio_format: str) -> str:
+    normalized = audio_format.lower().strip(".")
+    if normalized == "mpeg":
+        return "mp3"
+    return normalized or "wav"
+
+
+def _load_json_event(message: str) -> dict[str, Any]:
+    try:
+        event = json.loads(message)
+    except ValueError as exc:
+        raise SpeechServiceError("Speech WebSocket response is not JSON.") from exc
+    if not isinstance(event, dict):
+        raise SpeechServiceError("Speech WebSocket response is not an object.")
+    return event
+
+
+def _event_name(event: dict[str, Any]) -> str:
+    event_type = event.get("type")
+    if isinstance(event_type, str):
+        return event_type
+    header = event.get("header")
+    if isinstance(header, dict):
+        event_name = header.get("event")
+        if isinstance(event_name, str):
+            return event_name
+        action = header.get("action")
+        if isinstance(action, str):
+            return action
+    event_name = event.get("event")
+    return event_name if isinstance(event_name, str) else ""
+
+
+def _select_final_text(results: list[str]) -> str:
+    if not results:
+        return ""
+    return max(results, key=len).strip()

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { Pause, RotateCcw, Volume2 } from "lucide-react";
 import type { DigitalHumanConfig } from "./types";
 
 type ConnectionState = "idle" | "connecting" | "connected" | "error";
@@ -34,6 +36,39 @@ function getReadableFetchError(caught: unknown, fallback: string) {
   return caught.message;
 }
 
+function MistMountainLayer() {
+  return (
+    <div className="mist-mountain-layer" aria-hidden="true">
+      <span className="mist-cloud mist-cloud-one" />
+      <span className="mist-cloud mist-cloud-two" />
+      <span className="mountain-shape mountain-shape-left" />
+      <span className="mountain-shape mountain-shape-right" />
+    </div>
+  );
+}
+
+function LotusWatermark() {
+  return (
+    <div className="lotus-watermark" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+function ScenicStageFrame({ children }: { children: ReactNode }) {
+  return <div className="scenic-stage-frame">{children}</div>;
+}
+
+function getCaptionText(latestAnswer: string) {
+  const trimmedAnswer = latestAnswer.trim();
+  if (!trimmedAnswer) {
+    return "您好，我是灵山数字导游，可以为您介绍路线、景点和文化故事。";
+  }
+  return trimmedAnswer.length > 58 ? `${trimmedAnswer.slice(0, 58)}...` : trimmedAnswer;
+}
+
 export function DigitalHumanPanel({
   latestAnswer,
   latestAnswerKey,
@@ -63,6 +98,11 @@ export function DigitalHumanPanel({
 
   const canSpeak =
     connectionState === "connected" && sessionId.length > 0 && latestAnswer.trim().length > 0;
+  const stageStateLabel = isAnswerLoading
+    ? "正在讲解"
+    : connectionState === "connected"
+      ? "实时讲解"
+      : connectionStateLabels[connectionState];
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -439,57 +479,55 @@ export function DigitalHumanPanel({
 
   return (
     <section className="digital-human-live-card" aria-label="LiveTalking 数字人">
+      <MistMountainLayer />
       <div className="stage-head">
         <div>
-          <p className="eyebrow">Digital Human</p>
+          <p className="eyebrow">灵山数字导游</p>
           <strong>灵山数字人导游</strong>
         </div>
         <span className={`stage-state ${connectionState}`}>
           <span />
-          {connectionStateLabels[connectionState]}
+          {stageStateLabel}
         </span>
       </div>
-      <div className="live-stage">
-        <video ref={videoRef} autoPlay playsInline muted className="live-video" />
-        <audio ref={audioRef} autoPlay />
-        {connectionState !== "connected" ? (
-          <div className="live-placeholder">
-            <div className="standby-frame" aria-hidden="true">
-              <div className="standby-orbit">
-                <span />
-                <span />
-                <span />
+      <ScenicStageFrame>
+        <LotusWatermark />
+        <div className="live-stage">
+          <video ref={videoRef} autoPlay playsInline muted className="live-video" />
+          <audio ref={audioRef} autoPlay />
+          {connectionState !== "connected" ? (
+            <div className="live-placeholder">
+              <div className="standby-frame" aria-hidden="true">
+                <div className="standby-orbit">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className={isAnswerLoading ? "standby-avatar speaking" : "standby-avatar"}>
+                  <span className="standby-head" />
+                  <span className="standby-body" />
+                  <span className="standby-wave" />
+                </div>
               </div>
-              <div className={isAnswerLoading ? "standby-avatar speaking" : "standby-avatar"}>
-                <span className="standby-head" />
-                <span className="standby-body" />
-                <span className="standby-wave" />
+              <div className="standby-copy">
+                <strong>数字导游待机中</strong>
+                <span>连接 LiveTalking 后显示实时形象、语音与口型</span>
               </div>
             </div>
-            <div className="standby-copy">
-              <strong>数字导游待机中</strong>
-              <span>连接 LiveTalking 后显示实时形象、语音与口型</span>
-            </div>
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      </ScenicStageFrame>
+      <p className="stage-caption">{getCaptionText(latestAnswer)}</p>
 
       <div className="digital-human-actions">
         <button
           type="button"
-          className="primary-action"
+          className="secondary-action"
           onClick={() => void connectDigitalHuman()}
           disabled={connectionState === "connecting"}
         >
-          {connectionState === "connected" ? "重新连接数字人" : "重新连接"}
-        </button>
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={() => void speakLatestAnswer()}
-          disabled={!canSpeak || isSpeaking}
-        >
-          {isSpeaking ? "发送中..." : "播报当前回答"}
+          <RotateCcw size={16} aria-hidden="true" />
+          重新连接
         </button>
         <button
           type="button"
@@ -497,7 +535,17 @@ export function DigitalHumanPanel({
           onClick={() => void interruptSpeaking()}
           disabled={!sessionId}
         >
-          打断播报
+          <Pause size={16} aria-hidden="true" />
+          暂停播报
+        </button>
+        <button
+          type="button"
+          className="primary-action"
+          onClick={() => void speakLatestAnswer()}
+          disabled={!canSpeak || isSpeaking}
+        >
+          <Volume2 size={16} aria-hidden="true" />
+          {isSpeaking ? "发送中..." : "播报回答"}
         </button>
         {isAudioBlocked ? (
           <button

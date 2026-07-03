@@ -1,4 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  Bot,
+  CalendarClock,
+  Database,
+  FileText,
+  Headphones,
+  Map,
+  Mic,
+  RefreshCw,
+  Route,
+  Users,
+} from "lucide-react";
 import type {
   ActiveView,
   AdminOverview,
@@ -32,42 +45,18 @@ import { VisitorReportPanel } from "./VisitorReportPanel";
 import { AvatarManager } from "./AvatarManager";
 
 const sampleQuestions = [
+  "第一次来灵山怎么游？",
+  "灵山大佛有什么看点？",
   "九龙灌浴几点开始？",
-  "灵山大佛为什么是核心景点？",
-  "第一次来灵山胜境怎么游玩？",
-  "亲子家庭推荐哪条路线？",
-  "灵山梵宫有什么看点？",
-  "五印坛城适合拍照吗？",
+  "带老人怎么安排路线？",
+  "附近哪里有厕所？",
+  "有什么餐饮推荐？",
 ];
 
 const scenicTags = [
   "国家 AAAAA 级景区",
-  "佛教文化朝圣",
+  "佛教文化胜境",
   "太湖山水",
-  "世界佛教论坛永久会址",
-];
-
-const featuredSpots = [
-  {
-    name: "灵山大佛",
-    type: "核心地标",
-    highlight: "88 米露天青铜释迦牟尼立像，登顶可俯瞰太湖。",
-  },
-  {
-    name: "九龙灌浴",
-    type: "动态演艺",
-    highlight: "花开见佛，九龙沐浴，适合首次入园游客观看。",
-  },
-  {
-    name: "灵山梵宫",
-    type: "艺术殿堂",
-    highlight: "佛教艺术与现代科技融合，可观看《吉祥颂》。",
-  },
-  {
-    name: "祥符禅寺",
-    type: "千年古刹",
-    highlight: "小灵山佛教文化根基，适合历史文化讲解。",
-  },
 ];
 
 type HeroHeaderProps = {
@@ -75,24 +64,142 @@ type HeroHeaderProps = {
   onViewChange: (view: ActiveView) => void;
 };
 
-function HeroHeader({ activeView, onViewChange }: HeroHeaderProps) {
+type AdminSection = "overview" | "insights" | "qa" | "knowledge" | "avatar";
+type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "service_guide";
+
+type GuideServiceEntry = {
+  id: GuideIntent;
+  title: string;
+  helper: string;
+  summary: string;
+  supports: string[];
+  icon: typeof Route;
+};
+
+const mockGuideServiceEntries: GuideServiceEntry[] = [
+  {
+    id: "route_guide",
+    title: "游览路线",
+    helper: "路线图 / 推荐路线",
+    summary: "可查看景区游览路线图，并按游客类型推荐适合的游览顺序。",
+    supports: ["景区游览路线图", "亲子路线", "老人路线", "半日游路线"],
+    icon: Route,
+  },
+  {
+    id: "map_guide",
+    title: "地图导航",
+    helper: "GPS / 步行路线",
+    summary: "可接入实时定位，展示当前位置、步行路线和附近服务点。",
+    supports: ["实时 GPS 定位", "当前位置", "步行路线", "最近服务点"],
+    icon: Map,
+  },
+  {
+    id: "performance_time",
+    title: "演出时间",
+    helper: "实时场次 / 演出地点",
+    summary: "可查看今日演出时间表，并提示下一场演出的时间与地点。",
+    supports: ["实时演出时间表", "下一场提醒", "演出地点导航"],
+    icon: CalendarClock,
+  },
+  {
+    id: "service_guide",
+    title: "游客服务",
+    helper: "厕所 / 餐饮 / 应急",
+    summary: "可查询景区常用服务点，帮助游客快速找到附近设施。",
+    supports: [
+      "卫生间",
+      "餐饮",
+      "停车",
+      "游客中心",
+      "医疗救助",
+      "失物招领",
+      "紧急联系",
+      "无障碍通道",
+      "母婴室",
+      "行李寄存",
+      "充电宝",
+      "文创购物",
+    ],
+    icon: Headphones,
+  },
+];
+
+const adminSections: Array<{
+  id: AdminSection;
+  label: string;
+  description: string;
+  icon: typeof Activity;
+}> = [
+  {
+    id: "overview",
+    label: "总览",
+    description: "服务量与趋势",
+    icon: Activity,
+  },
+  {
+    id: "insights",
+    label: "游客洞察",
+    description: "报告与反馈",
+    icon: Users,
+  },
+  {
+    id: "qa",
+    label: "问答质检",
+    description: "记录与风险",
+    icon: FileText,
+  },
+  {
+    id: "knowledge",
+    label: "知识库",
+    description: "资料维护",
+    icon: Database,
+  },
+  {
+    id: "avatar",
+    label: "数字人形象",
+    description: "Avatar 管理",
+    icon: Bot,
+  },
+];
+
+function StatusBadge({ children }: { children: string }) {
+  return <span className="status-badge">{children}</span>;
+}
+
+function SoftCloudPattern() {
+  return (
+    <div className="soft-cloud-pattern" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+function ScenicHeader({
+  activeView,
+  onViewChange,
+}: HeroHeaderProps) {
   return (
     <header className="hero-header" aria-label="灵山胜境 AI 数字导游">
+      <SoftCloudPattern />
       <div className="brand-mark" aria-hidden="true">
         <span />
       </div>
       <div className="hero-copy">
-        <p className="eyebrow">灵山胜境 AI 数字导游中控台</p>
+        <p className="eyebrow">灵山胜境 AI 数字人导游系统</p>
         <h1>让数字人替游客讲清每一处灵山</h1>
-        <p>
-          面向游客咨询、路线规划和文化讲解的数字导游屏。前台专注问答和讲解，
-          管理入口收进后台，不干扰游客使用。
-        </p>
+        <p>面向景区游客、游客中心导览屏和平板设备的数字人讲解界面。</p>
         <div className="tag-row" aria-label="景区标签">
           {scenicTags.map((tag) => (
             <span key={tag}>{tag}</span>
           ))}
         </div>
+      </div>
+      <div className="header-status-row" aria-label="景区状态">
+        <StatusBadge>今日开放中</StatusBadge>
+        <StatusBadge>25℃ 晴</StatusBadge>
+        <StatusBadge>人流适中</StatusBadge>
       </div>
       <nav className="admin-entry" aria-label="页面入口">
         <button
@@ -104,13 +211,198 @@ function HeroHeader({ activeView, onViewChange }: HeroHeaderProps) {
         </button>
         <button
           type="button"
-          className={activeView === "admin" ? "active" : ""}
+          className={activeView === "admin" ? "active admin-link" : "admin-link"}
           onClick={() => onViewChange("admin")}
         >
           管理后台
         </button>
       </nav>
     </header>
+  );
+}
+
+function QuickQuestionButton({
+  question,
+  onSelect,
+}: {
+  question: string;
+  onSelect: (question: string) => void;
+}) {
+  return (
+    <button type="button" onClick={() => onSelect(question)}>
+      {question}
+    </button>
+  );
+}
+
+function GuideQuestionPanel({
+  question,
+  isLoading,
+  isListening,
+  isRecognizing,
+  onQuestionChange,
+  onQuickQuestion,
+  onSubmit,
+  onToggleListening,
+}: {
+  question: string;
+  isLoading: boolean;
+  isListening: boolean;
+  isRecognizing: boolean;
+  onQuestionChange: (question: string) => void;
+  onQuickQuestion: (question: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onToggleListening: () => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="guide-question-panel">
+      <div className="question-panel-head">
+        <div>
+          <p className="eyebrow">游客提问</p>
+          <h2>想问数字导游什么？</h2>
+          <span>可以询问路线、演出、文化典故和附近服务</span>
+        </div>
+      </div>
+      <label className="sr-only" htmlFor="question">
+        输入你想了解的灵山胜境问题
+      </label>
+      <textarea
+        id="question"
+        value={question}
+        onChange={(event) => onQuestionChange(event.target.value)}
+        rows={4}
+        placeholder="例如：九龙灌浴几点开始？"
+      />
+      <div className="quick-questions">
+        <span className="quick-questions-label">问法示例</span>
+        {sampleQuestions.map((item) => (
+          <QuickQuestionButton key={item} question={item} onSelect={onQuickQuestion} />
+        ))}
+      </div>
+      <div className="question-actions">
+        <button
+          className="voice-action"
+          type="button"
+          onClick={onToggleListening}
+          disabled={isRecognizing}
+          title={isListening ? "停止录音" : "语音输入"}
+          aria-label={isListening ? "停止录音" : "语音输入"}
+        >
+          <Mic size={20} aria-hidden="true" />
+        </button>
+        <button className="primary-action" type="submit" disabled={isLoading}>
+          {isLoading ? "数字导游正在整理讲解内容..." : "开始讲解"}
+        </button>
+        <span className="speech-status">
+          {isListening
+            ? "正在聆听，静音 2 秒后自动识别"
+            : isRecognizing
+              ? "正在识别语音..."
+              : ""}
+        </span>
+      </div>
+    </form>
+  );
+}
+
+function AnswerPreviewCard({
+  response,
+  servicePreview,
+  isLoading,
+  isExpanded,
+  onToggleExpanded,
+}: {
+  response: ChatResponse | null;
+  servicePreview: GuideServiceEntry | null;
+  isLoading: boolean;
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
+}) {
+  const hasAnswer = Boolean(response?.answer.trim());
+  const hasServicePreview = !hasAnswer && !isLoading && Boolean(servicePreview);
+  const previewText = hasAnswer
+    ? response?.answer
+    : servicePreview
+      ? servicePreview.summary
+      : "您可以输入问题，或点击下方常用导览服务，查看路线、地图、演出和游客服务。";
+  const previewLabel = isLoading
+    ? "正在整理讲解内容"
+    : hasAnswer
+      ? "数字人输出"
+      : servicePreview
+        ? "常用导览服务"
+        : "数字导游可以为您介绍";
+
+  return (
+    <section className="answer-card answer-preview-card" aria-label="讲解预览">
+      <div className="answer-card-head">
+        <div>
+          <p className="eyebrow">{previewLabel}</p>
+          {servicePreview ? <strong className="service-preview-title">{servicePreview.title}</strong> : null}
+        </div>
+        {response ? (
+          <span className={response.reliable ? "status-chip reliable" : "status-chip unreliable"}>
+            {response.reliable ? "资料可信" : "建议人工复核"}
+          </span>
+        ) : null}
+      </div>
+      <p className={isExpanded ? "answer-preview-text expanded" : "answer-preview-text"}>
+        {isLoading ? "数字导游正在结合景区资料整理适合现场播报的讲解内容。" : previewText}
+      </p>
+      {hasServicePreview ? (
+        <div className="service-preview-list" aria-label={`${servicePreview?.title}后期支持内容`}>
+          {servicePreview?.supports.map((item) => <span key={item}>{item}</span>)}
+        </div>
+      ) : null}
+      <div className="answer-preview-footer">
+        <span>
+          {hasAnswer
+            ? "内容较长时可展开查看完整回答。"
+            : hasServicePreview
+              ? "服务入口将根据景区配置展示路线、定位、场次和服务点。"
+              : "回答生成后，数字人会自动开始播报。"}
+        </span>
+        {hasAnswer ? (
+          <button type="button" className="text-action" onClick={onToggleExpanded}>
+            {isExpanded ? "收起详情" : "展开详情"}
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function GuideServiceBar({
+  entries,
+  isLoading,
+  onSelect,
+}: {
+  entries: GuideServiceEntry[];
+  isLoading: boolean;
+  onSelect: (intent: GuideIntent) => void;
+}) {
+  return (
+    <section className="today-recommend-bar" aria-label="常用导览服务">
+      {entries.map((item) => {
+        const ItemIcon = item.icon;
+        return (
+          <button
+            key={item.title}
+            type="button"
+            className="recommend-entry"
+            onClick={() => onSelect(item.id)}
+            disabled={isLoading}
+            aria-label={`${item.title}：${item.helper}`}
+          >
+            <ItemIcon size={22} aria-hidden="true" />
+            <div>
+              <strong>{item.title}</strong>
+              <p>{item.helper}</p>
+            </div>
+          </button>
+        );
+      })}
+    </section>
   );
 }
 
@@ -124,7 +416,12 @@ export function App() {
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("chat");
+  const [activeAdminSection, setActiveAdminSection] =
+    useState<AdminSection>("overview");
   const [digitalHumanRefreshKey, setDigitalHumanRefreshKey] = useState(0);
+  const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
+  const [activeGuideService, setActiveGuideService] =
+    useState<GuideServiceEntry | null>(null);
 
   const [records, setRecords] = useState<ChatRecord[]>([]);
   const [recordsTotalCount, setRecordsTotalCount] = useState(0);
@@ -235,6 +532,13 @@ export function App() {
     lowConfidenceError,
     feedbackError,
   ].filter(Boolean);
+  const adminIsRefreshing =
+    recordsLoading ||
+    overviewLoading ||
+    dashboardLoading ||
+    lowConfidenceLoading ||
+    feedbackLoading ||
+    visitorReportLoading;
 
   useEffect(() => {
     if (activeView === "admin") {
@@ -296,6 +600,10 @@ export function App() {
       setIsFeedbackNoteOpen(false);
     }
   }, [response?.record_id, feedbackRecords]);
+
+  useEffect(() => {
+    setIsAnswerExpanded(false);
+  }, [response?.record_id]);
 
   useEffect(() => {
     return () => {
@@ -507,11 +815,22 @@ export function App() {
 
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmedQuestion = question.trim();
+    await askQuestion(question);
+  }
+
+  async function askQuestion(
+    nextQuestion: string,
+    options: { syncInput?: boolean } = {},
+  ) {
+    const trimmedQuestion = nextQuestion.trim();
     if (!trimmedQuestion) {
       return;
     }
 
+    if (options.syncInput !== false) {
+      setQuestion(trimmedQuestion);
+    }
+    setActiveGuideService(null);
     setIsLoading(true);
     setError("");
 
@@ -538,6 +857,14 @@ export function App() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function openGuideService(intent: GuideIntent) {
+    const matchedEntry = mockGuideServiceEntries.find((entry) => entry.id === intent) ?? null;
+    setActiveGuideService(matchedEntry);
+    setResponse(null);
+    setError("");
+    setIsAnswerExpanded(false);
   }
 
   async function submitFeedback(rating: FeedbackRating) {
@@ -734,6 +1061,7 @@ export function App() {
 
   function focusRecordFromPool(recordId: number) {
     resetFilters();
+    setActiveAdminSection("qa");
     const matchedRecord = records.find((record) => record.id === recordId);
     if (matchedRecord) {
       setSelectedRecord(matchedRecord);
@@ -749,10 +1077,19 @@ export function App() {
   }
 
   return (
-    <main className="scenic-guide-page">
-      <HeroHeader activeView={activeView} onViewChange={setActiveView} />
-      <section className="main-layout">
-        <section className="left-column" aria-label="AI 数字人讲解台">
+    <main className={activeView === "admin" ? "scenic-guide-page admin-page" : "scenic-guide-page"}>
+      <ScenicHeader
+        activeView={activeView}
+        onViewChange={setActiveView}
+      />
+      <section
+        className={activeView === "admin" ? "main-layout admin-mode" : "main-layout"}
+      >
+        <section
+          className="left-column"
+          aria-label="AI 数字人讲解台"
+          hidden={activeView !== "chat"}
+        >
           <DigitalHumanPanel
             latestAnswer={response?.answer ?? ""}
             latestAnswerKey={
@@ -764,80 +1101,26 @@ export function App() {
             }
             isAnswerLoading={isLoading}
             refreshKey={digitalHumanRefreshKey}
-          />
-          <section className="featured-spots" aria-label="灵山核心景点">
-            <div className="section-kicker">推荐讲解主题</div>
-            <div className="spot-grid">
-              {featuredSpots.map((spot) => (
-                <article key={spot.name} className="spot-card">
-                  <span>{spot.type}</span>
-                  <strong>{spot.name}</strong>
-                  <p>{spot.highlight}</p>
-                </article>
-              ))}
-            </div>
+            />
           </section>
-        </section>
 
         <section
-          className="right-column"
+          className={activeView === "admin" ? "admin-column" : "right-column"}
           aria-label={activeView === "chat" ? "游客问答" : "管理后台"}
         >
 
           {activeView === "chat" ? (
             <>
-              <form onSubmit={submitQuestion} className="guide-question-panel">
-                <div className="question-panel-head">
-                  <div>
-                    <p className="eyebrow">游客提问</p>
-                    <h2>想了解什么？</h2>
-                  </div>
-                  <span>路线、演出、文化寓意、亲子安排都可以问。</span>
-                </div>
-                <label className="sr-only" htmlFor="question">
-                  输入你想了解的灵山胜境问题
-                </label>
-                <textarea
-                  id="question"
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  rows={4}
-                  placeholder="例如：九龙灌浴几点开始？第一次来灵山胜境怎么游玩？"
-                />
-                <div className="quick-questions">
-                  {sampleQuestions.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setQuestion(item)}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-                <div className="question-actions">
-                  <button
-                    className="voice-action"
-                    type="button"
-                    onClick={() => void toggleListening()}
-                    disabled={isRecognizing}
-                    title={isListening ? "停止录音" : "语音输入"}
-                    aria-label={isListening ? "停止录音" : "语音输入"}
-                  >
-                    {isListening ? "■" : "●"}
-                  </button>
-                  <button className="primary-action" type="submit" disabled={isLoading}>
-                    {isLoading ? "检索中..." : "请数字人讲解"}
-                  </button>
-                  <span className="speech-status">
-                    {isListening
-                      ? "正在聆听，静音 2 秒后自动识别"
-                      : isRecognizing
-                        ? "正在识别语音..."
-                        : ""}
-                  </span>
-                </div>
-              </form>
+              <GuideQuestionPanel
+                question={question}
+                isLoading={isLoading}
+                isListening={isListening}
+                isRecognizing={isRecognizing}
+                onQuestionChange={setQuestion}
+                onQuickQuestion={setQuestion}
+                onSubmit={submitQuestion}
+                onToggleListening={() => void toggleListening()}
+              />
 
               {error ? <p className="error-message">{error}</p> : null}
               {speechError ? <p className="error-message">{speechError}</p> : null}
@@ -845,116 +1128,85 @@ export function App() {
                 <p className="error-message">{feedbackError}</p>
               ) : null}
 
-              {response ? (
-                <article className="answer-card">
-                  <div className="answer-card-head">
-                    <div>
-                      <p className="eyebrow">AI 数字导游回答</p>
-                      <h3>导游讲解</h3>
-                    </div>
-                    <span className={response.reliable ? "status-chip reliable" : "status-chip unreliable"}>
-                      {response.reliable ? "资料可信" : "建议人工复核"}
-                    </span>
-                  </div>
-
-                  <div className="answer-body">
-                    <p>{response.answer}</p>
-                    <button
-                      type="button"
-                      className="voice-action playback-action"
-                      onClick={() => void toggleSpeechPlayback()}
-                      title={isSpeaking ? "停止播报" : "语音播报"}
-                      aria-label={isSpeaking ? "停止播报" : "语音播报"}
-                    >
-                      {isSpeaking ? "■" : "▶"}
-                    </button>
-
-                    <div className="answer-feedback-bar" aria-label="游客反馈">
-                      <strong>这次回答有帮助吗？</strong>
-                      {feedbackStatus?.recordId === response.record_id ? (
-                        <span className="panel-note">
-                          已反馈：{feedbackStatus.rating === "helpful" ? "有帮助" : "没有帮助"}
-                        </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        className={
-                          feedbackStatus?.rating === "helpful"
-                            ? "feedback-button active"
-                            : "feedback-button"
-                        }
-                        onClick={() => void submitFeedback("helpful")}
-                        disabled={isSubmittingFeedback}
-                      >
-                        有帮助
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          feedbackStatus?.rating === "unhelpful"
-                            ? "feedback-button active"
-                            : "feedback-button"
-                        }
-                        onClick={() => void submitFeedback("unhelpful")}
-                        disabled={isSubmittingFeedback}
-                      >
-                        没有帮助
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          isFeedbackNoteOpen
-                            ? "feedback-button active"
-                            : "feedback-button"
-                        }
-                        onClick={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
-                      >
-                        补充意见
-                      </button>
-                    </div>
-                    {isFeedbackNoteOpen ? (
-                      <div className="feedback-note-popover">
-                        <textarea
-                          id="feedback-note"
-                          value={feedbackText}
-                          onChange={(event) => setFeedbackText(event.target.value)}
-                          rows={3}
-                          placeholder="可选：补充你觉得还缺什么信息"
-                        />
-                        <button
-                          type="button"
-                          className="secondary-action"
-                          onClick={() =>
-                            feedbackStatus
-                              ? void submitFeedback(feedbackStatus.rating)
-                              : undefined
-                          }
-                          disabled={!feedbackStatus || isSubmittingFeedback}
-                        >
-                          {feedbackStatus ? "提交意见" : "先选择评价"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              ) : (
-                <section className="answer-card empty-answer">
-                  <p className="eyebrow">等待提问</p>
-                  <h3>试试让数字导游先讲一段</h3>
-                  <p>
-                    选择上方快捷问题，或直接输入你想了解的景点、路线和文化背景。
-                    生成答案后，数字人会自动开始播报。
-                  </p>
-                  <div className="empty-prompt-grid" aria-label="提问示例">
-                    <span>演出时间</span>
-                    <span>游览路线</span>
-                    <span>文化典故</span>
-                  </div>
-                </section>
-              )}
+              <AnswerPreviewCard
+                response={response}
+                servicePreview={activeGuideService}
+                isLoading={isLoading}
+                isExpanded={isAnswerExpanded}
+                onToggleExpanded={() => setIsAnswerExpanded((isExpanded) => !isExpanded)}
+              />
             </>
           ) : (
-            <section className="admin-panel compact-admin" aria-label="管理后台">
+            <section className="admin-console" aria-label="管理后台">
+              <header className="admin-shell">
+                <div className="admin-title-block">
+                  <p className="eyebrow">ADMIN CONSOLE</p>
+                  <h2>管理后台</h2>
+                  <p>
+                    按运营、洞察、质检、知识和形象分区处理后台任务，避免所有面板堆在同一个长页面里。
+                  </p>
+                </div>
+                <div className="admin-quick-metrics" aria-label="后台关键指标">
+                  <div>
+                    <span>今日服务</span>
+                    <strong>{overviewLoading ? "--" : (overview?.today_records ?? 0)}</strong>
+                  </div>
+                  <div>
+                    <span>低置信</span>
+                    <strong>
+                      {overviewLoading ? "--" : (overview?.low_confidence_count ?? 0)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>平均响应</span>
+                    <strong>
+                      {overviewLoading
+                        ? "--"
+                        : `${Math.round(overview?.average_response_time_ms ?? 0)} ms`}
+                    </strong>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="secondary-action admin-refresh"
+                  onClick={() => void loadAdminData()}
+                  disabled={adminIsRefreshing}
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                  {adminIsRefreshing ? "刷新中..." : "刷新全部"}
+                </button>
+              </header>
+
+              <nav className="admin-tabs" aria-label="管理后台模块">
+                {adminSections.map((section) => {
+                  const SectionIcon = section.icon;
+                  return (
+                    <button
+                      key={section.id}
+                      type="button"
+                      className={activeAdminSection === section.id ? "active" : ""}
+                      onClick={() => setActiveAdminSection(section.id)}
+                      aria-pressed={activeAdminSection === section.id}
+                    >
+                      <SectionIcon size={18} aria-hidden="true" />
+                      <span>
+                        <strong>{section.label}</strong>
+                        <small>{section.description}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {adminErrors.map((message, index) => (
+                <p key={`admin-error-${index}`} className="error-message">
+                  {message}
+                </p>
+              ))}
+
+              <section className="admin-section">
+                {activeAdminSection === "overview" ? (
+                  <>
               <section className="stats-grid">
                 {stats.map((stat) => (
                   <article key={stat.label} className="stat-card">
@@ -971,20 +1223,29 @@ export function App() {
                 error={dashboardError}
                 onRefresh={() => void loadDashboard()}
               />
+                  </>
+                ) : null}
 
+                {activeAdminSection === "insights" ? (
+                  <>
               <VisitorReportPanel
                 report={visitorReport}
                 isLoading={visitorReportLoading}
                 error={visitorReportError}
                 onRefresh={() => void loadVisitorReport()}
               />
+                  </>
+                ) : null}
 
+                {activeAdminSection === "avatar" ? (
               <AvatarManager
                 onAvatarSelected={() =>
                   setDigitalHumanRefreshKey((current) => current + 1)
                 }
               />
+                ) : null}
 
+                {activeAdminSection === "insights" ? (
               <section className="feedback-stream-panel" aria-label="最近反馈">
                 <div className="low-confidence-header">
                   <div>
@@ -1022,7 +1283,10 @@ export function App() {
                   </div>
                 )}
               </section>
+                ) : null}
 
+                {activeAdminSection === "qa" ? (
+                  <>
               <section className="low-confidence-panel" aria-label="低置信度问题池">
                 <div className="low-confidence-header">
                   <div>
@@ -1069,9 +1333,15 @@ export function App() {
                   </div>
                 )}
               </section>
+                  </>
+                ) : null}
 
+                {activeAdminSection === "knowledge" ? (
               <KnowledgeManager />
+                ) : null}
 
+                {activeAdminSection === "qa" ? (
+                  <>
               <section className="filters-panel" aria-label="问答记录筛选">
                 <div className="filter-field filter-span-2">
                   <label htmlFor="keyword-filter">关键词</label>
@@ -1167,12 +1437,6 @@ export function App() {
                   </button>
                 </div>
               </section>
-
-              {adminErrors.map((message, index) => (
-                <p key={`admin-error-${index}`} className="error-message">
-                  {message}
-                </p>
-              ))}
 
               <section className="admin-workspace">
                 <section className="records-table-panel" aria-label="问答记录列表">
@@ -1334,9 +1598,19 @@ export function App() {
                   )}
                 </aside>
               </section>
+                  </>
+                ) : null}
+              </section>
             </section>
           )}
         </section>
+        {activeView === "chat" ? (
+          <GuideServiceBar
+            entries={mockGuideServiceEntries}
+            isLoading={isLoading}
+            onSelect={openGuideService}
+          />
+        ) : null}
       </section>
     </main>
   );

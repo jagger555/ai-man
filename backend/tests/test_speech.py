@@ -1,4 +1,5 @@
 import base64
+import json
 
 from fastapi.testclient import TestClient
 
@@ -164,11 +165,14 @@ def test_speech_recognize_supports_websocket(monkeypatch):
 
     assert SpeechService().recognize(b"RIFFaudio", "wav") == "灵山大佛有什么看点"
     assert any(isinstance(message, bytes) for message in fake_socket.sent)
+    start_event = json.loads(str(fake_socket.sent[0]))
+    assert start_event["payload"]["input"] == {}
 
 
 def test_speech_synthesize_supports_websocket(monkeypatch):
     monkeypatch.setenv("BAILIAN_API_KEY", "test-key")
     monkeypatch.setenv("BAILIAN_TTS_URL", "wss://ws-test.example.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime")
+    monkeypatch.setenv("BAILIAN_TTS_RESPONSE_FORMAT", "pcm")
 
     class FakeWebSocket:
         def __init__(self):
@@ -203,5 +207,7 @@ def test_speech_synthesize_supports_websocket(monkeypatch):
 
     monkeypatch.setattr("app.services.speech_service.websocket_connect", fake_connect)
 
-    assert SpeechService().synthesize("欢迎来到灵山") == b"RIFFoneRIFFtwo"
+    audio = SpeechService().synthesize("欢迎来到灵山")
+    assert audio.startswith(b"RIFF")
+    assert b"RIFFoneRIFFtwo" in audio
     assert any('"type": "session.finish"' in message for message in fake_socket.sent)

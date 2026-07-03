@@ -2,6 +2,8 @@
 param(
     [string]$ProjectRoot = "",
     [string]$LiveTalkingPath = "D:\Projects\DH",
+    [string]$LiveTalkingPython = "",
+    [string]$LiveTalkingCondaEnv = "livetalking",
     [int]$LiveTalkingPort = 8010,
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 5173,
@@ -175,6 +177,7 @@ function Start-ManagedProcess {
 function Start-LiveTalkingService {
     param(
         [string]$WorkingDirectory,
+        [string]$PythonExecutable,
         [int]$Port,
         [string]$Model,
         [string]$AvatarId,
@@ -182,7 +185,7 @@ function Start-LiveTalkingService {
     )
 
     $liveLog = Join-Path $LogDir "livetalking.log"
-    $liveCommand = "python app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
+    $liveCommand = "& $(Quote-PS $PythonExecutable) app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
     $liveProcess = Start-ManagedProcess -Name "livetalking" -WorkingDirectory $WorkingDirectory -Command $liveCommand
     return [pscustomobject]@{
         name = "livetalking"
@@ -225,6 +228,60 @@ function Resolve-LiveTalkingPath {
     throw "LiveTalking app.py not found under: $Path"
 }
 
+function Resolve-LiveTalkingPython {
+    param(
+        [string]$RequestedPython,
+        [string]$CondaEnv
+    )
+
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($RequestedPython)) {
+        $candidates += $RequestedPython
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($env:LIVETALKING_PYTHON)) {
+        $candidates += $env:LIVETALKING_PYTHON
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($CondaEnv)) {
+        $condaBases = @()
+        if (-not [string]::IsNullOrWhiteSpace($env:CONDA_PREFIX)) {
+            $condaBases += $env:CONDA_PREFIX
+        }
+        $condaCommand = Get-Command conda -ErrorAction SilentlyContinue
+        if ($condaCommand) {
+            try {
+                $condaBase = (& conda info --base 2>$null | Select-Object -First 1)
+                if (-not [string]::IsNullOrWhiteSpace($condaBase)) {
+                    $condaBases += $condaBase
+                }
+            }
+            catch {
+                Write-Warning "Unable to query conda base path; trying known local paths."
+            }
+        }
+        $condaBases += @("D:\anaconda", "$env:USERPROFILE\anaconda3", "$env:USERPROFILE\miniconda3")
+
+        foreach ($condaBase in ($condaBases | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
+            $envPython = Join-Path $condaBase "envs\$CondaEnv\python.exe"
+            $candidates += $envPython
+        }
+    }
+
+    $candidates += "python"
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-Path -LiteralPath $candidate) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($command) {
+            return $command.Source
+        }
+    }
+
+    throw "No Python executable was found for LiveTalking"
+}
+
 $ScriptRoot = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($ScriptRoot)) {
     $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -246,6 +303,7 @@ Require-Path "Frontend path" $FrontendPath
 if (-not $SkipLiveTalking) {
     Require-Path "LiveTalking path" $LiveTalkingPath
     $LiveTalkingPath = Resolve-LiveTalkingPath $LiveTalkingPath
+    $LiveTalkingPython = Resolve-LiveTalkingPython -RequestedPython $LiveTalkingPython -CondaEnv $LiveTalkingCondaEnv
 }
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -290,7 +348,7 @@ if (-not $SkipLiveTalking) {
         }
     }
     else {
-        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
     }
 }
 
@@ -307,7 +365,7 @@ if (-not $SkipLiveTalking -and -not $DryRun) {
             if (Stop-StaleLiveTalkingPortOwner -Port $LiveTalkingPort) {
                 Write-Host "Restarting LiveTalking on port $LiveTalkingPort."
                 $services = @($services | Where-Object { $_.name -ne "livetalking" })
-                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
                 $didRestartLiveTalking = $true
                 if (-not (Wait-HttpReady -Name "LiveTalking" -Url $liveTalkingReadyUrl -TimeoutSeconds $LiveTalkingReadyTimeoutSeconds)) {
                     Write-Warning "LiveTalking restarted, but it still did not answer $liveTalkingReadyUrl within $LiveTalkingReadyTimeoutSeconds seconds."
@@ -378,6 +436,9 @@ Write-Host "AI guide local services are starting."
 Write-Host "Frontend:      $frontendUrl"
 Write-Host "Backend check: $backendUrl"
 Write-Host "LiveTalking:   $digitalHumanBaseUrl"
+if (-not $SkipLiveTalking) {
+    Write-Host "LiveTalking Python: $LiveTalkingPython"
+}
 Write-Host "Run dir:       $RunDir"
 Write-Host ""
 Write-Host "Logs:"

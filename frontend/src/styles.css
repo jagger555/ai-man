@@ -4048,7 +4048,11 @@ textarea {
 }
 
 .right-column {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: max-content max-content;
+  grid-auto-rows: max-content;
+  align-content: start;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .digital-human-live-card,
@@ -4369,8 +4373,10 @@ textarea {
 
 .answer-preview-card {
   min-height: 0;
+  height: max-content;
+  display: grid;
   align-content: start;
-  gap: 0;
+  gap: 9px;
 }
 
 .answer-preview-card .eyebrow {
@@ -4392,7 +4398,7 @@ textarea {
 
 .answer-preview-text {
   display: -webkit-box;
-  margin: 8px 0 0;
+  margin: 0;
   overflow: hidden;
   color: #405d56;
   font-size: 15px;
@@ -4406,10 +4412,11 @@ textarea {
 }
 
 .service-preview-list {
+  min-height: 28px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 0;
   max-height: 66px;
   overflow: hidden;
 }
@@ -4428,12 +4435,13 @@ textarea {
 }
 
 .answer-preview-footer {
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   border-top: 1px solid rgba(228, 216, 191, 0.72);
-  margin-top: 9px;
+  margin-top: 0;
   padding-top: 9px;
   color: #71827d;
   font-size: 13px;

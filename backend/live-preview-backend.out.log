@@ -1,0 +1,15 @@
+INFO:     127.0.0.1:49728 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53642 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53643 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56443 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56444 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52907 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55493 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56691 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56692 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63179 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54782 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56863 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56864 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51098 - "GET /api/digital-human/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51099 - "GET /api/digital-human/config HTTP/1.1" 200 OK

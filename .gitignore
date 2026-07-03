@@ -1,5 +1,6 @@
 __pycache__/
 .pytest_cache/
+.pytest_tmp/
 .hypothesis/
 *.pyc
 .env
@@ -8,3 +9,6 @@ backend/.env
 
 node_modules/
 dist/
+dist-digital-human-check/
+dist-ui-design-check/
+dist-ui-preview/

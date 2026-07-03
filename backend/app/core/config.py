@@ -116,7 +116,7 @@ def get_speech_config() -> SpeechConfig:
         asr_model=os.getenv("BAILIAN_ASR_MODEL", os.getenv("SPEECH_ASR_MODEL", "paraformer-realtime-v2")),
         tts_url=os.getenv("BAILIAN_TTS_URL", os.getenv("SPEECH_TTS_URL", default_tts_url)),
         tts_voice=os.getenv("BAILIAN_TTS_VOICE", os.getenv("SPEECH_TTS_VOICE", "Cherry")),
-        tts_response_format=os.getenv("BAILIAN_TTS_RESPONSE_FORMAT", os.getenv("SPEECH_TTS_RESPONSE_FORMAT", "wav")),
+        tts_response_format=os.getenv("BAILIAN_TTS_RESPONSE_FORMAT", os.getenv("SPEECH_TTS_RESPONSE_FORMAT", "pcm")),
         tts_sample_rate=int(os.getenv("BAILIAN_TTS_SAMPLE_RATE", os.getenv("SPEECH_TTS_SAMPLE_RATE", "24000"))),
         timeout=int(os.getenv("SPEECH_TIMEOUT", "30")),
     )

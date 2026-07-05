@@ -30,7 +30,6 @@ import type {
   VisitorReport,
 } from "./types";
 import {
-  buildAdminStats,
   formatTimestamp,
   getConfidenceBand,
   getModelBucket,
@@ -418,6 +417,7 @@ export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [activeAdminSection, setActiveAdminSection] =
     useState<AdminSection>("overview");
+  const [adminTimeRange, setAdminTimeRange] = useState<"today" | "7d" | "30d">("7d");
   const [digitalHumanRefreshKey, setDigitalHumanRefreshKey] = useState(0);
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
   const [activeGuideService, setActiveGuideService] =
@@ -519,7 +519,6 @@ export function App() {
       ? filteredRecords.find((record) => record.id === selectedRecord.id)
       : null) ?? filteredRecords[0] ?? null;
 
-  const stats = buildAdminStats(overview, overviewLoading);
   const adminErrors = [
     recordsError,
     overviewError,
@@ -798,7 +797,7 @@ export function App() {
       setResponse((await result.json()) as ChatResponse);
       await loadAdminData();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "问答请求失败");
+      setError(caught instanceof Error ? (caught as Error).message : "问答请求失败");
     } finally {
       setIsLoading(false);
     }
@@ -845,7 +844,7 @@ export function App() {
       setIsFeedbackNoteOpen(false);
       await Promise.all([loadFeedbackRecords(), loadAdminData()]);
     } catch (caught) {
-      setFeedbackError(caught instanceof Error ? caught.message : "提交反馈失败");
+      setFeedbackError(caught instanceof Error ? (caught as Error).message : "提交反馈失败");
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -876,7 +875,7 @@ export function App() {
       setRecords(payload.records);
       setRecordsTotalCount(payload.total_count);
     } catch (caught) {
-      setRecordsError(caught instanceof Error ? caught.message : "读取记录失败");
+      setRecordsError(caught instanceof Error ? (caught as Error).message : "读取记录失败");
     } finally {
       setRecordsLoading(false);
     }
@@ -894,7 +893,7 @@ export function App() {
 
       setOverview((await result.json()) as AdminOverview);
     } catch (caught) {
-      setOverviewError(caught instanceof Error ? caught.message : "读取统计信息失败");
+      setOverviewError(caught instanceof Error ? (caught as Error).message : "读取统计信息失败");
     } finally {
       setOverviewLoading(false);
     }
@@ -913,7 +912,7 @@ export function App() {
       setDashboard((await result.json()) as DashboardData);
     } catch (caught) {
       setDashboardError(
-        caught instanceof Error ? caught.message : "读取数据大屏失败",
+        caught instanceof Error ? (caught as Error).message : "读取数据大屏失败",
       );
     } finally {
       setDashboardLoading(false);
@@ -935,7 +934,7 @@ export function App() {
       setLowConfidenceTotalCount(payload.total_count);
     } catch (caught) {
       setLowConfidenceError(
-        caught instanceof Error ? caught.message : "读取低置信度问题失败",
+        caught instanceof Error ? (caught as Error).message : "读取低置信度问题失败",
       );
     } finally {
       setLowConfidenceLoading(false);
@@ -957,7 +956,7 @@ export function App() {
       setFeedbackTotalCount(payload.total_count);
     } catch (caught) {
       setFeedbackError(
-        caught instanceof Error ? caught.message : "读取反馈列表失败",
+        caught instanceof Error ? (caught as Error).message : "读取反馈列表失败",
       );
     } finally {
       setFeedbackLoading(false);
@@ -977,7 +976,7 @@ export function App() {
       setVisitorReport((await result.json()) as VisitorReport);
     } catch (caught) {
       setVisitorReportError(
-        caught instanceof Error ? caught.message : "读取游客感受度报告失败",
+        caught instanceof Error ? (caught as Error).message : "读取游客感受度报告失败",
       );
     } finally {
       setVisitorReportLoading(false);
@@ -1023,10 +1022,12 @@ export function App() {
 
   return (
     <main className={activeView === "admin" ? "scenic-guide-page admin-page" : "scenic-guide-page"}>
-      <ScenicHeader
-        activeView={activeView}
-        onViewChange={setActiveView}
-      />
+      {activeView === "chat" ? (
+        <ScenicHeader
+          activeView={activeView}
+          onViewChange={setActiveView}
+        />
+      ) : null}
       <section
         className={activeView === "admin" ? "main-layout admin-mode" : "main-layout"}
       >
@@ -1086,40 +1087,50 @@ export function App() {
               <header className="admin-shell">
                 <div className="admin-title-block">
                   <p className="eyebrow">ADMIN CONSOLE</p>
-                  <h2>管理后台</h2>
+                  <h2>灵山胜境 AI 导游管理后台</h2>
                   <p>
-                    按运营、洞察、质检、知识和形象分区处理后台任务，避免所有面板堆在同一个长页面里。
+                    问答运营、知识库质检、数字人服务监控
                   </p>
                 </div>
-                <div className="admin-quick-metrics" aria-label="后台关键指标">
-                  <div>
-                    <span>今日服务</span>
-                    <strong>{overviewLoading ? "--" : (overview?.today_records ?? 0)}</strong>
+                <div className="admin-head-actions" aria-label="后台控制项">
+                  <div className="admin-range-tabs" aria-label="时间范围筛选">
+                    {[
+                      { id: "today", label: "今日" },
+                      { id: "7d", label: "近 7 天" },
+                      { id: "30d", label: "近 30 天" },
+                    ].map((range) => (
+                      <button
+                        key={range.id}
+                        type="button"
+                        className={adminTimeRange === range.id ? "active" : ""}
+                        onClick={() => setAdminTimeRange(range.id as "today" | "7d" | "30d")}
+                        aria-pressed={adminTimeRange === range.id}
+                      >
+                        {range.label}
+                      </button>
+                    ))}
                   </div>
-                  <div>
-                    <span>低置信</span>
-                    <strong>
-                      {overviewLoading ? "--" : (overview?.low_confidence_count ?? 0)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>平均响应</span>
-                    <strong>
-                      {overviewLoading
-                        ? "--"
-                        : `${Math.round(overview?.average_response_time_ms ?? 0)} ms`}
-                    </strong>
-                  </div>
+                  <span className="admin-status-pill">
+                    <span aria-hidden="true" />
+                    数字人在线
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-action admin-refresh"
+                    onClick={() => void loadAdminData()}
+                    disabled={adminIsRefreshing}
+                  >
+                    <RefreshCw size={16} aria-hidden="true" />
+                    {adminIsRefreshing ? "刷新中..." : "刷新全部"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-action admin-refresh"
+                    onClick={() => setActiveView("chat")}
+                  >
+                    游客端
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="secondary-action admin-refresh"
-                  onClick={() => void loadAdminData()}
-                  disabled={adminIsRefreshing}
-                >
-                  <RefreshCw size={16} aria-hidden="true" />
-                  {adminIsRefreshing ? "刷新中..." : "刷新全部"}
-                </button>
               </header>
 
               <nav className="admin-tabs" aria-label="管理后台模块">
@@ -1151,24 +1162,14 @@ export function App() {
 
               <section className="admin-section">
                 {activeAdminSection === "overview" ? (
-                  <>
-              <section className="stats-grid">
-                {stats.map((stat) => (
-                  <article key={stat.label} className="stat-card">
-                    <small>{stat.label}</small>
-                    <strong>{stat.value}</strong>
-                    <p>{stat.helper}</p>
-                  </article>
-                ))}
-              </section>
-
               <DashboardPanel
                 dashboard={dashboard}
+                overview={overview}
+                lowConfidenceRecords={lowConfidenceRecords}
                 isLoading={dashboardLoading}
                 error={dashboardError}
                 onRefresh={() => void loadDashboard()}
               />
-                  </>
                 ) : null}
 
                 {activeAdminSection === "insights" ? (

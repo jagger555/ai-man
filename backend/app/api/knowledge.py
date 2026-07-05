@@ -14,7 +14,6 @@ from app.services.knowledge_service import (
     KnowledgeDocumentStore,
     VALID_KNOWLEDGE_CATEGORIES,
     VALID_KNOWLEDGE_STATUSES,
-    build_chunks_from_documents,
     load_chunks_from_markdown_file,
     load_chunks_from_public_package,
     parse_knowledge_upload,
@@ -95,10 +94,7 @@ def list_knowledge_documents(
     store = get_knowledge_document_store()
     documents = store.list_documents(keyword=keyword, category=category, status=status)
     summary = store.summary()
-    active_documents = store.list_documents(status="active")
-    summary["managed_searchable_chunk_count"] = len(
-        build_chunks_from_documents(active_documents)
-    )
+    summary["managed_searchable_chunk_count"] = len(store.list_chunks(status="active"))
     summary["searchable_chunk_count"] = get_knowledge_base().chunk_count
 
     return JSONResponse(

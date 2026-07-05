@@ -242,6 +242,32 @@ def test_admin_can_create_update_and_delete_managed_knowledge_document(
     assert final_list_response.json()["count"] == 0
 
 
+def test_admin_summary_reports_sqlite_chunk_count(monkeypatch, tmp_path):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    _reset_knowledge_base_cache()
+
+    client = TestClient(app)
+    create_response = client.post(
+        "/api/admin/knowledge/documents",
+        json={
+            "title": "KBSUM schedule",
+            "category": "faq",
+            "content": "KBSUM-1030 九龙灌浴每天10:30开始表演。",
+            "source_name": "manual",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.get("/api/admin/knowledge/documents")
+    assert response.status_code == 200
+    summary = response.json()["summary"]
+    assert summary["total_documents"] == 1
+    assert summary["managed_searchable_chunk_count"] >= 1
+    assert summary["searchable_chunk_count"] >= summary["managed_searchable_chunk_count"]
+
+
 def test_uploaded_docx_document_is_used_by_search_and_chat(monkeypatch, tmp_path):
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
     monkeypatch.setenv("LLM_PROVIDER", "mock")

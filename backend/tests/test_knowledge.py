@@ -6,7 +6,11 @@ from fastapi.testclient import TestClient
 
 from app.api.knowledge import _reset_knowledge_base_cache
 from app.main import app
-from app.services.knowledge_service import KnowledgeBase, KnowledgeDocumentStore
+from app.services.knowledge_service import (
+    KnowledgeBase,
+    KnowledgeDocument,
+    KnowledgeDocumentStore,
+)
 
 
 def _docx_bytes(paragraphs: list[str]) -> bytes:
@@ -46,6 +50,65 @@ def test_knowledge_document_store_uses_sqlite_and_reloads_chunks(tmp_path: Path)
     assert chunks[0].document_id == created.id
     assert "KBSQL-1030" in chunks[0].text
     assert database_path.read_bytes()[:16].startswith(b"SQLite format")
+
+
+def test_search_prefers_schedule_chunk_over_route_chunk_for_time_question():
+    route = KnowledgeDocument(
+        id=1,
+        title="路线",
+        category="guide_script",
+        content="九龙灌浴路线适合亲子游客，游览顺序为入口、广场、佛手广场。",
+        source_name="route",
+        status="active",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    schedule = KnowledgeDocument(
+        id=2,
+        title="演出时间",
+        category="faq",
+        content="九龙灌浴广场每天10:30开始喷泉表演，恶劣天气可能临时调整。",
+        source_name="schedule",
+        status="active",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    knowledge_base = KnowledgeBase.from_documents([route, schedule])
+    results = knowledge_base.search("九龙灌浴几点开始表演", limit=2)
+
+    assert results[0]["document_id"] == 2
+    assert results[0]["chunk_type"] in {"schedule", "faq", "fact"}
+    assert "schedule" in results[0]["question_categories"]
+
+
+def test_search_prefers_route_chunk_for_route_question():
+    route = KnowledgeDocument(
+        id=1,
+        title="亲子路线",
+        category="guide_script",
+        content="路线名称：亲子休闲游\n游览顺序：入口、九龙灌浴、佛手广场\n适用人群：亲子游客。",
+        source_name="route",
+        status="active",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    fact = KnowledgeDocument(
+        id=2,
+        title="九龙灌浴介绍",
+        category="history_culture",
+        content="九龙灌浴体现佛教文化典故，是景区重要文化景观。",
+        source_name="culture",
+        status="active",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    knowledge_base = KnowledgeBase.from_documents([route, fact])
+    results = knowledge_base.search("带孩子怎么玩九龙灌浴路线", limit=2)
+
+    assert results[0]["document_id"] == 1
+    assert "route" in results[0]["question_categories"]
 
 
 def test_public_package_zip_docx_content_is_searchable(tmp_path: Path):

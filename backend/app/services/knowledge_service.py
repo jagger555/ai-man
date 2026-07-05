@@ -160,6 +160,10 @@ class KnowledgeChunk:
     document_id: int | None = None
     title: str | None = None
     category: str | None = None
+    chunk_type: str = "fact"
+    entities: tuple[str, ...] = ()
+    keywords: tuple[str, ...] = ()
+    question_categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -388,7 +392,8 @@ class KnowledgeDocumentStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT source, text, document_id, title, category
+                SELECT source, text, document_id, title, category, chunk_type,
+                       entities_json, keywords_json, question_categories_json
                 FROM knowledge_chunks
                 WHERE status = ?
                 ORDER BY id ASC
@@ -403,6 +408,12 @@ class KnowledgeDocumentStore:
                 document_id=int(row["document_id"]),
                 title=str(row["title"]) if row["title"] is not None else None,
                 category=str(row["category"]) if row["category"] is not None else None,
+                chunk_type=str(row["chunk_type"]),
+                entities=tuple(json.loads(str(row["entities_json"]))),
+                keywords=tuple(json.loads(str(row["keywords_json"]))),
+                question_categories=tuple(
+                    json.loads(str(row["question_categories_json"]))
+                ),
             )
             for row in rows
         ]
@@ -440,10 +451,11 @@ class KnowledgeDocumentStore:
             connection.execute(
                 """
                 INSERT INTO knowledge_chunks (
-                    document_id, source, text, title, category, status,
-                    created_at, updated_at
+                    document_id, source, text, title, category, chunk_type,
+                    entities_json, keywords_json, question_categories_json,
+                    status, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document.id,
@@ -451,6 +463,10 @@ class KnowledgeDocumentStore:
                     chunk.text,
                     chunk.title,
                     chunk.category,
+                    chunk.chunk_type,
+                    json.dumps(list(chunk.entities), ensure_ascii=False),
+                    json.dumps(list(chunk.keywords), ensure_ascii=False),
+                    json.dumps(list(chunk.question_categories), ensure_ascii=False),
                     document.status,
                     now,
                     now,
@@ -560,7 +576,7 @@ class KnowledgeBase:
         scored: list[tuple[int, KnowledgeChunk]] = []
 
         for chunk in self._chunks:
-            score = _score(chunk.text, terms, query, category=category)
+            score = _score(chunk, terms, query, category=category)
             if score > 0:
                 scored.append((score, chunk))
 
@@ -573,6 +589,10 @@ class KnowledgeBase:
                 "document_id": chunk.document_id,
                 "title": chunk.title,
                 "category": chunk.category,
+                "chunk_type": chunk.chunk_type,
+                "entities": list(chunk.entities),
+                "keywords": list(chunk.keywords),
+                "question_categories": list(chunk.question_categories),
             }
             for score, chunk in scored[:limit]
         ]
@@ -643,7 +663,7 @@ def _build_chunks(
 ) -> list[KnowledgeChunk]:
     paragraphs = _split_paragraphs(text)
     chunks = [
-        KnowledgeChunk(
+        _make_chunk(
             source=source,
             text=paragraph,
             document_id=document_id,
@@ -662,6 +682,31 @@ def _build_chunks(
         )
     )
     return chunks
+
+
+def _make_chunk(
+    *,
+    source: str,
+    text: str,
+    document_id: int | None = None,
+    title: str | None = None,
+    category: str | None = None,
+) -> KnowledgeChunk:
+    chunk_type = _infer_chunk_type(text, category)
+    entities = tuple(sorted(_extract_scenic_terms(" ".join([title or "", text]))))
+    keywords = tuple(sorted(_query_terms(text)))
+    question_categories = _infer_question_categories(text, chunk_type)
+    return KnowledgeChunk(
+        source=source,
+        text=text,
+        document_id=document_id,
+        title=title,
+        category=category,
+        chunk_type=chunk_type,
+        entities=entities,
+        keywords=keywords,
+        question_categories=question_categories,
+    )
 
 
 def _split_paragraphs(text: str) -> list[str]:
@@ -702,7 +747,7 @@ def _sliding_window_chunks(
         return []
 
     return [
-        KnowledgeChunk(
+        _make_chunk(
             source=f"{source}#window-{index + 1}",
             text="\n".join(paragraphs[index : index + window_size]),
             document_id=document_id,
@@ -803,19 +848,31 @@ def _query_terms(query: str) -> set[str]:
 
 
 def _score(
-    text: str,
+    chunk: KnowledgeChunk,
     terms: set[str],
     query: str,
     *,
     category: str | None = None,
 ) -> int:
+    text = chunk.text
     lowered = text.lower()
     score = sum(lowered.count(term) for term in terms if term)
 
+    if category and category in chunk.question_categories:
+        score += 90
+    query_entity_matches = {
+        entity
+        for entity in chunk.entities
+        if len(entity) >= 2 and entity in query
+    }
+    score += 45 * len(query_entity_matches)
+
     if category:
         score += _category_boost(text, query, category)
-    if category != "route" and _looks_like_route_text(text):
+    if category is not None and category != "route" and chunk.chunk_type == "route":
         score -= 160
+    if category == "route" and chunk.chunk_type == "route":
+        score += 80
 
     if category == "height":
         if "通高" in text:
@@ -829,6 +886,37 @@ def _score(
                 score += 40
 
     return score
+
+
+def _infer_chunk_type(text: str, category: str | None = None) -> str:
+    if _looks_like_route_text(text) or "路线" in text or category == "guide_script":
+        return "route"
+    if any(term in text for term in ("几点", "时间", "开放", "开始", "结束", "演出", "表演")):
+        return "schedule"
+    if any(term in text for term in ("门票", "票价", "价格", "优惠", "免票", "半价")):
+        return "ticket"
+    if category == "faq":
+        return "faq"
+    if category == "history_culture":
+        return "history"
+    return "fact"
+
+
+def _infer_question_categories(text: str, chunk_type: str) -> tuple[str, ...]:
+    categories: set[str] = set()
+    for name, config in QUERY_CLASSIFIERS.items():
+        evidence = config["evidence"]
+        if any(term in text for term in evidence):
+            categories.add(name)
+    if chunk_type == "route":
+        categories.add("route")
+    if chunk_type == "schedule":
+        categories.add("schedule")
+    if chunk_type == "ticket":
+        categories.add("ticket")
+    if chunk_type == "history":
+        categories.add("culture")
+    return tuple(sorted(categories or {"general"}))
 
 
 def _classify_query(question: str) -> tuple[str, str | None]:

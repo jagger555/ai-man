@@ -10,6 +10,10 @@ from websockets.sync.client import connect as websocket_connect
 
 from app.core.config import SpeechConfig, get_speech_config
 
+ASR_SAMPLE_RATE = 16000
+ASR_AUDIO_FORMAT = "pcm"
+ASR_MAX_SENTENCE_SILENCE_MS = 800
+
 
 class SpeechServiceError(RuntimeError):
     pass
@@ -94,31 +98,11 @@ class SpeechService:
         task_id = str(uuid.uuid4())
         results: list[str] = []
         headers = self._websocket_headers()
-        start_event = {
-            "header": {
-                "action": "run-task",
-                "task_id": task_id,
-                "streaming": "duplex",
-            },
-            "payload": {
-                "task_group": "audio",
-                "task": "asr",
-                "function": "recognition",
-                "model": self._config.asr_model,
-                "parameters": {
-                    "format": _normalize_audio_format(audio_format),
-                    "sample_rate": 16000,
-                },
-            },
-        }
-        finish_event = {
-            "header": {
-                "action": "finish-task",
-                "task_id": task_id,
-                "streaming": "duplex",
-            },
-            "payload": {},
-        }
+        start_event = self.build_asr_start_event(
+            task_id,
+            audio_format=_normalize_audio_format(audio_format),
+        )
+        finish_event = self.build_asr_finish_event(task_id)
 
         try:
             with websocket_connect(
@@ -234,6 +218,60 @@ class SpeechService:
             headers["X-DashScope-WorkSpace"] = self._config.workspace_id
         return headers
 
+    @property
+    def asr_url(self) -> str:
+        return self._config.asr_url
+
+    @property
+    def timeout(self) -> int:
+        return self._config.timeout
+
+    def websocket_headers(self) -> dict[str, str]:
+        self._ensure_asr_configured()
+        return self._websocket_headers()
+
+    def build_asr_start_event(
+        self,
+        task_id: str,
+        audio_format: str = ASR_AUDIO_FORMAT,
+        sample_rate: int = ASR_SAMPLE_RATE,
+    ) -> dict[str, Any]:
+        return {
+            "header": {
+                "action": "run-task",
+                "task_id": task_id,
+                "streaming": "duplex",
+            },
+            "payload": {
+                "task_group": "audio",
+                "task": "asr",
+                "function": "recognition",
+                "model": self._config.asr_model,
+                "input": {},
+                "parameters": {
+                    "format": _normalize_audio_format(audio_format),
+                    "sample_rate": sample_rate,
+                    "semantic_punctuation_enabled": False,
+                    "max_sentence_silence": ASR_MAX_SENTENCE_SILENCE_MS,
+                },
+            },
+        }
+
+    def build_asr_finish_event(self, task_id: str) -> dict[str, Any]:
+        return {
+            "header": {
+                "action": "finish-task",
+                "task_id": task_id,
+                "streaming": "duplex",
+            },
+            "payload": {
+                "input": {},
+            },
+        }
+
+    def ensure_asr_configured(self) -> None:
+        self._ensure_asr_configured()
+
     def _ensure_asr_configured(self) -> None:
         if not self._config.api_key or not self._config.asr_url:
             raise SpeechServiceError("Speech ASR is not configured.")
@@ -274,6 +312,11 @@ def _extract_text(payload: dict[str, Any]) -> str:
         payload.get("payload", {}).get("output", {}).get("text")
         if isinstance(payload.get("payload"), dict)
         and isinstance(payload.get("payload", {}).get("output"), dict)
+        else None,
+        payload.get("payload", {}).get("output", {}).get("sentence", {}).get("text")
+        if isinstance(payload.get("payload"), dict)
+        and isinstance(payload.get("payload", {}).get("output"), dict)
+        and isinstance(payload.get("payload", {}).get("output", {}).get("sentence"), dict)
         else None,
         payload.get("payload", {}).get("sentence", {}).get("text")
         if isinstance(payload.get("payload"), dict)

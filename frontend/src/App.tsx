@@ -43,6 +43,7 @@ import { DigitalHumanPanel } from "./DigitalHumanPanel";
 import { KnowledgeManager } from "./KnowledgeManager";
 import { VisitorReportPanel } from "./VisitorReportPanel";
 import { AvatarManager } from "./AvatarManager";
+import { StreamingAsrClient } from "./streamingAsrClient";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -284,9 +285,8 @@ function GuideQuestionPanel({
           className="voice-action"
           type="button"
           onClick={onToggleListening}
-          disabled={isRecognizing}
-          title={isListening ? "停止录音" : "语音输入"}
-          aria-label={isListening ? "停止录音" : "语音输入"}
+          title={isListening ? "结束语音输入" : "开始语音输入"}
+          aria-label={isListening ? "结束语音输入" : "开始语音输入"}
         >
           <Mic size={20} aria-hidden="true" />
         </button>
@@ -295,9 +295,9 @@ function GuideQuestionPanel({
         </button>
         <span className="speech-status">
           {isListening
-            ? "正在聆听，静音 2 秒后自动识别"
+            ? "正在听，请再次点击结束语音输入"
             : isRecognizing
-              ? "正在识别语音..."
+              ? "正在识别语音并准备提问..."
               : ""}
         </span>
       </div>
@@ -472,13 +472,7 @@ export function App() {
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
 
   const sessionId = useMemo(() => `web-${Date.now()}`, []);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const silenceTimerRef = useRef<number | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const asrClientRef = useRef<StreamingAsrClient | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const currentAudioUrlRef = useRef<string | null>(null);
 
@@ -607,157 +601,89 @@ export function App() {
 
   useEffect(() => {
     return () => {
-      stopSpeechCapture();
+      asrClientRef.current?.close();
       stopCurrentAudio();
     };
   }, []);
 
   async function toggleListening() {
+    if (isRecognizing) {
+      asrClientRef.current?.close(false);
+      asrClientRef.current = null;
+      setIsRecognizing(false);
+      setIsListening(false);
+      setSpeechError("");
+      return;
+    }
+
     if (isListening) {
-      stopRecording();
+      finishListening();
       return;
     }
 
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setSpeechError("当前浏览器不支持语音录入");
-      return;
-    }
+    await startListening();
+  }
 
+  async function startListening() {
     setSpeechError("");
-    audioChunksRef.current = [];
+    setIsRecognizing(false);
+
+    const client = new StreamingAsrClient({
+      onPartial: (text) => {
+        if (text.trim()) {
+          setQuestion(text);
+        }
+      },
+      onFinal: (text) => {
+        const trimmedText = text.trim();
+        asrClientRef.current = null;
+        setIsListening(false);
+        setIsRecognizing(false);
+        if (!trimmedText) {
+          setSpeechError("没有识别到语音内容");
+          return;
+        }
+        setQuestion(trimmedText);
+        void askQuestion(trimmedText);
+      },
+      onError: (message) => {
+        asrClientRef.current = null;
+        setIsListening(false);
+        setIsRecognizing(false);
+        setSpeechError(getReadableSpeechError(message));
+      },
+      onClose: () => {
+        if (asrClientRef.current === client) {
+          asrClientRef.current = null;
+          setIsListening(false);
+          setIsRecognizing(false);
+        }
+      },
+    });
+    asrClientRef.current = client;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "";
-      const recorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined,
-      );
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: recorder.mimeType || "audio/wav",
-        });
-        audioChunksRef.current = [];
-        stopSpeechCapture();
-        if (audioBlob.size > 0) {
-          void recognizeSpeech(audioBlob);
-        }
-      };
-
-      setupSilenceDetection(stream);
-      recorder.start();
+      await client.start();
       setIsListening(true);
     } catch (caught) {
-      stopSpeechCapture();
+      client.close(false);
+      if (asrClientRef.current === client) {
+        asrClientRef.current = null;
+      }
+      setIsListening(false);
+      setIsRecognizing(false);
       setSpeechError(
-        caught instanceof Error ? caught.message : "无法获取麦克风权限",
+        caught instanceof Error
+          ? getReadableSpeechError(caught.message)
+          : "无法获取麦克风权限",
       );
     }
   }
 
-  function setupSilenceDetection(stream: MediaStream) {
-    const AudioContextClass =
-      window.AudioContext ||
-      (window as Window & { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!AudioContextClass) {
-      return;
-    }
-
-    const audioContext = new AudioContextClass();
-    const analyser = audioContext.createAnalyser();
-    const source = audioContext.createMediaStreamSource(stream);
-    analyser.fftSize = 2048;
-    source.connect(analyser);
-    audioContextRef.current = audioContext;
-    analyserRef.current = analyser;
-
-    const buffer = new Uint8Array(analyser.fftSize);
-    const detectSilence = () => {
-      analyser.getByteTimeDomainData(buffer);
-      let sum = 0;
-      for (const value of buffer) {
-        const normalized = (value - 128) / 128;
-        sum += normalized * normalized;
-      }
-      const volume = Math.sqrt(sum / buffer.length);
-      if (volume < 0.018) {
-        if (silenceTimerRef.current === null) {
-          silenceTimerRef.current = window.setTimeout(() => {
-            stopRecording();
-          }, 2000);
-        }
-      } else if (silenceTimerRef.current !== null) {
-        window.clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = null;
-      }
-      animationFrameRef.current = window.requestAnimationFrame(detectSilence);
-    };
-
-    detectSilence();
-  }
-
-  function stopRecording() {
-    const recorder = mediaRecorderRef.current;
-    if (recorder && recorder.state !== "inactive") {
-      recorder.stop();
-      return;
-    }
-    stopSpeechCapture();
-  }
-
-  function stopSpeechCapture() {
-    if (silenceTimerRef.current !== null) {
-      window.clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    if (animationFrameRef.current !== null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
-    void audioContextRef.current?.close();
-    audioContextRef.current = null;
-    analyserRef.current = null;
-    mediaRecorderRef.current = null;
+  function finishListening() {
+    asrClientRef.current?.finish();
     setIsListening(false);
-  }
-
-  async function recognizeSpeech(audioBlob: Blob) {
     setIsRecognizing(true);
-    setSpeechError("");
-
-    try {
-      const formData = new FormData();
-      const extension = audioBlob.type.includes("webm") ? "webm" : "wav";
-      formData.append("audio", audioBlob, `speech.${extension}`);
-      const result = await fetch("/api/speech/recognize", {
-        method: "POST",
-        body: formData,
-      });
-      if (!result.ok) {
-        throw new Error(
-          result.status === 502 ? "语音服务暂不可用" : `语音识别返回 ${result.status}`,
-        );
-      }
-      const payload = (await result.json()) as { text: string };
-      setQuestion(payload.text);
-    } catch (caught) {
-      setSpeechError(caught instanceof Error ? caught.message : "语音识别失败");
-    } finally {
-      setIsRecognizing(false);
-    }
   }
 
   async function toggleSpeechPlayback() {
@@ -799,7 +725,7 @@ export function App() {
       await audio.play();
     } catch (caught) {
       stopCurrentAudio();
-      setSpeechError(caught instanceof Error ? caught.message : "语音播报失败");
+      setSpeechError(caught instanceof Error ? (caught as Error).message : "语音播报失败");
     }
   }
 
@@ -811,6 +737,25 @@ export function App() {
       currentAudioUrlRef.current = null;
     }
     setIsSpeaking(false);
+  }
+
+  function getReadableSpeechError(message: string) {
+    if (
+      message.includes("Speech ASR is not configured") ||
+      message.includes("speech service unavailable") ||
+      message.includes("401") ||
+      message.includes("403") ||
+      message.includes("语音服务暂不可用")
+    ) {
+      return "语音服务暂不可用";
+    }
+    if (
+      message.includes("browser microphone is not supported") ||
+      message.includes("browser audio capture is not supported")
+    ) {
+      return "当前浏览器不支持语音输入";
+    }
+    return message || "语音服务暂不可用";
   }
 
   async function submitQuestion(event: FormEvent<HTMLFormElement>) {

@@ -101,7 +101,12 @@ def get_digital_human_config() -> DigitalHumanConfig:
 
 def get_speech_config() -> SpeechConfig:
     workspace_id = os.getenv("BAILIAN_WORKSPACE_ID", os.getenv("SPEECH_WORKSPACE_ID", ""))
-    api_host = os.getenv("BAILIAN_API_HOST", os.getenv("SPEECH_API_HOST", ""))
+    default_api_host = (
+        f"{workspace_id}.cn-beijing.maas.aliyuncs.com" if workspace_id else ""
+    )
+    api_host = os.getenv(
+        "BAILIAN_API_HOST", os.getenv("SPEECH_API_HOST", default_api_host)
+    )
     default_asr_url = f"wss://{api_host}/api-ws/v1/inference" if api_host else ""
     default_tts_url = (
         f"wss://{api_host}/api-ws/v1/realtime?model=qwen3-tts-flash-realtime"

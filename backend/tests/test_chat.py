@@ -3,6 +3,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
+from app.api.knowledge import _reset_knowledge_base_cache
 from app.main import app
 
 
@@ -60,10 +61,42 @@ def test_chat_endpoint_returns_low_confidence_for_unrelated_question(monkeypatch
     assert body["confidence"] < 0.5
     assert body["sources"] == []
     assert "景区知识库" in body["answer"]
-    assert body["model_provider"] == "mock"
-    assert body["model_status"] == "mock_response"
+    assert body["model_provider"] == "retrieval_guard"
+    assert body["model_status"] == "low_confidence_no_llm"
     assert body["record_status"] == "saved"
     assert body["record_id"] >= 1
+
+
+def test_unreliable_retrieval_skips_real_llm_generation(monkeypatch, tmp_path):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "chat_records.db"))
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_BASE_URL", "https://example.com/v1")
+    _reset_knowledge_base_cache()
+
+    def fail_post(*args, **kwargs):
+        raise AssertionError("real LLM should not be called for unreliable retrieval")
+
+    monkeypatch.setattr("app.services.llm.real_llm.httpx.post", fail_post)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "session_id": "low-confidence-session",
+            "question": "今天股票市场怎么走？",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reliable"] is False
+    assert body["sources"] == []
+    assert body["model_provider"] == "retrieval_guard"
+    assert body["model_status"] == "low_confidence_no_llm"
+    assert body["record_status"] == "saved"
 
 
 def test_chat_endpoint_uses_real_llm_when_configured(monkeypatch):

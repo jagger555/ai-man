@@ -11,6 +11,11 @@ from app.services.llm.mock_llm import MockGuideLLM
 from app.services.prompt_service import build_prompt, clean_question
 from app.services.retriever_service import RetrieverService
 
+LOW_CONFIDENCE_ANSWER = (
+    "当前景区知识库中暂未提供足够可靠的信息。"
+    "建议换一个与景区历史、景点特色、游览路线、开放时间或票务服务相关的问题。"
+)
+
 
 @dataclass(frozen=True)
 class ChatAnswer:
@@ -49,7 +54,12 @@ class AnswerService:
         retrieval = RetrieverService(self._knowledge_base).retrieve(cleaned_question)
         prompt = build_prompt(cleaned_question, retrieval.sources, recent_history)
 
-        answer, model_provider, model_status = self._generate_answer(prompt)
+        if retrieval.reliable:
+            answer, model_provider, model_status = self._generate_answer(prompt)
+        else:
+            answer = LOW_CONFIDENCE_ANSWER
+            model_provider = "retrieval_guard"
+            model_status = "low_confidence_no_llm"
         latency_ms = int((time.perf_counter() - start) * 1000)
         record_id, record_status = self._persist_record(
             session_id=session_id,

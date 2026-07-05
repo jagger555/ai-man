@@ -233,7 +233,7 @@ class ChatRecordService:
                     COALESCE(
                         SUM(
                             CASE
-                                WHEN model_provider != 'mock'
+                                WHEN model_provider NOT IN ('mock', 'retrieval_guard')
                                      AND model_status NOT LIKE 'fallback_to_mock:%'
                                 THEN 1
                                 ELSE 0

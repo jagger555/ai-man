@@ -91,7 +91,7 @@ def test_admin_overview_endpoint_summarizes_model_and_quality_metrics(
     assert body["today_records"] == 4
     assert body["low_confidence_count"] == 1
     assert body["real_model_count"] == 1
-    assert body["mock_model_count"] == 2
+    assert body["mock_model_count"] == 1
     assert body["fallback_count"] == 1
     assert body["average_response_time_ms"] >= 0
 

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api.knowledge import _reset_knowledge_base_cache
 from app.main import app
-from app.services.knowledge_service import KnowledgeBase
+from app.services.knowledge_service import KnowledgeBase, KnowledgeDocumentStore
 
 
 def _docx_bytes(paragraphs: list[str]) -> bytes:
@@ -23,6 +23,29 @@ def _docx_bytes(paragraphs: list[str]) -> bytes:
     with ZipFile(buffer, "w") as docx:
         docx.writestr("word/document.xml", document_xml)
     return buffer.getvalue()
+
+
+def test_knowledge_document_store_uses_sqlite_and_reloads_chunks(tmp_path: Path):
+    database_path = tmp_path / "knowledge.db"
+    store = KnowledgeDocumentStore(database_path)
+
+    created = store.create_document(
+        title="KBSQL route",
+        category="faq",
+        content="KBSQL-1030 九龙灌浴广场每天10:30开始喷泉表演。",
+        source_name="manual",
+        status="active",
+    )
+
+    reloaded = KnowledgeDocumentStore(database_path)
+    reloaded_document = reloaded.get_document(created.id)
+    assert reloaded_document is not None
+    assert reloaded_document.title == "KBSQL route"
+    chunks = reloaded.list_chunks()
+    assert chunks
+    assert chunks[0].document_id == created.id
+    assert "KBSQL-1030" in chunks[0].text
+    assert database_path.read_bytes()[:16].startswith(b"SQLite format")
 
 
 def test_public_package_zip_docx_content_is_searchable(tmp_path: Path):

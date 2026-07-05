@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from io import BytesIO
@@ -35,6 +36,38 @@ VALID_KNOWLEDGE_CATEGORIES = {
     "other",
 }
 VALID_KNOWLEDGE_STATUSES = {"active", "draft", "archived"}
+
+DOCUMENTS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+CHUNKS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    text TEXT NOT NULL,
+    title TEXT,
+    category TEXT,
+    chunk_type TEXT NOT NULL DEFAULT 'fact',
+    entities_json TEXT NOT NULL DEFAULT '[]',
+    keywords_json TEXT NOT NULL DEFAULT '[]',
+    question_categories_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
+)
+"""
 
 BASE_SCENIC_TERMS = {
     "灵山胜境",
@@ -157,33 +190,50 @@ class KnowledgeDocumentStore:
         category: str | None = None,
         status: str | None = None,
     ) -> list[KnowledgeDocument]:
-        documents = self._load_documents()
+        self._migrate_legacy_json_if_needed()
+        clauses: list[str] = []
+        values: list[str] = []
+
+        if category:
+            clauses.append("category = ?")
+            values.append(category)
+        if status:
+            clauses.append("status = ?")
+            values.append(status)
         keyword_lower = keyword.strip().lower()
-        filtered: list[KnowledgeDocument] = []
+        if keyword_lower:
+            clauses.append(
+                "lower(title || ' ' || category || ' ' || source_name || ' ' || content) LIKE ?"
+            )
+            values.append(f"%{keyword_lower}%")
 
-        for document in documents:
-            if category and document.category != category:
-                continue
-            if status and document.status != status:
-                continue
-            if keyword_lower and keyword_lower not in " ".join(
-                [
-                    document.title,
-                    document.category,
-                    document.source_name,
-                    document.content,
-                ]
-            ).lower():
-                continue
-            filtered.append(document)
-
-        return sorted(filtered, key=lambda item: item.updated_at, reverse=True)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, title, category, content, source_name, status,
+                       created_at, updated_at
+                FROM knowledge_documents
+                {where_sql}
+                ORDER BY updated_at DESC
+                """,
+                values,
+            ).fetchall()
+        return [self._row_to_document(row) for row in rows]
 
     def get_document(self, document_id: int) -> KnowledgeDocument | None:
-        return next(
-            (document for document in self._load_documents() if document.id == document_id),
-            None,
-        )
+        self._migrate_legacy_json_if_needed()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, title, category, content, source_name, status,
+                       created_at, updated_at
+                FROM knowledge_documents
+                WHERE id = ?
+                """,
+                (document_id,),
+            ).fetchone()
+        return self._row_to_document(row) if row else None
 
     def create_document(
         self,
@@ -204,20 +254,38 @@ class KnowledgeDocumentStore:
         now = _now_iso()
 
         with self._lock:
-            payload = self._read_payload()
-            document = KnowledgeDocument(
-                id=int(payload["next_id"]),
-                title=normalized["title"],
-                category=normalized["category"],
-                content=normalized["content"],
-                source_name=normalized["source_name"],
-                status=normalized["status"],
-                created_at=now,
-                updated_at=now,
-            )
-            payload["next_id"] = document.id + 1
-            payload["documents"].append(asdict(document))
-            self._write_payload(payload)
+            self._migrate_legacy_json_if_needed()
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO knowledge_documents (
+                        title, category, content, source_name, status,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        normalized["title"],
+                        normalized["category"],
+                        normalized["content"],
+                        normalized["source_name"],
+                        normalized["status"],
+                        now,
+                        now,
+                    ),
+                )
+                document = KnowledgeDocument(
+                    id=int(cursor.lastrowid),
+                    title=normalized["title"],
+                    category=normalized["category"],
+                    content=normalized["content"],
+                    source_name=normalized["source_name"],
+                    status=normalized["status"],
+                    created_at=now,
+                    updated_at=now,
+                )
+                self._replace_document_chunks(connection, document)
+                connection.commit()
 
         return document
 
@@ -240,10 +308,19 @@ class KnowledgeDocumentStore:
         )
 
         with self._lock:
-            payload = self._read_payload()
-            for index, record in enumerate(payload["documents"]):
-                if int(record["id"]) != document_id:
-                    continue
+            self._migrate_legacy_json_if_needed()
+            with self._connect() as connection:
+                existing = connection.execute(
+                    """
+                    SELECT id, title, category, content, source_name, status,
+                           created_at, updated_at
+                    FROM knowledge_documents
+                    WHERE id = ?
+                    """,
+                    (document_id,),
+                ).fetchone()
+                if existing is None:
+                    raise KeyError(document_id)
 
                 updated = KnowledgeDocument(
                     id=document_id,
@@ -252,28 +329,41 @@ class KnowledgeDocumentStore:
                     content=normalized["content"],
                     source_name=normalized["source_name"],
                     status=normalized["status"],
-                    created_at=record["created_at"],
+                    created_at=str(existing["created_at"]),
                     updated_at=_now_iso(),
                 )
-                payload["documents"][index] = asdict(updated)
-                self._write_payload(payload)
+                connection.execute(
+                    """
+                    UPDATE knowledge_documents
+                    SET title = ?, category = ?, content = ?, source_name = ?,
+                        status = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        updated.title,
+                        updated.category,
+                        updated.content,
+                        updated.source_name,
+                        updated.status,
+                        updated.updated_at,
+                        updated.id,
+                    ),
+                )
+                self._replace_document_chunks(connection, updated)
+                connection.commit()
                 return updated
-
-        raise KeyError(document_id)
 
     def delete_document(self, document_id: int) -> bool:
         with self._lock:
-            payload = self._read_payload()
-            original_count = len(payload["documents"])
-            payload["documents"] = [
-                record
-                for record in payload["documents"]
-                if int(record["id"]) != document_id
-            ]
-            deleted = len(payload["documents"]) != original_count
-            if deleted:
-                self._write_payload(payload)
-            return deleted
+            self._migrate_legacy_json_if_needed()
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "DELETE FROM knowledge_documents WHERE id = ?",
+                    (document_id,),
+                )
+                deleted = cursor.rowcount > 0
+                connection.commit()
+                return deleted
 
     def summary(self) -> dict[str, int | dict[str, int]]:
         documents = self._load_documents()
@@ -293,37 +383,145 @@ class KnowledgeDocumentStore:
             "category_counts": by_category,
         }
 
-    def _load_documents(self) -> list[KnowledgeDocument]:
-        payload = self._read_payload()
+    def list_chunks(self, *, status: str = "active") -> list[KnowledgeChunk]:
+        self._migrate_legacy_json_if_needed()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT source, text, document_id, title, category
+                FROM knowledge_chunks
+                WHERE status = ?
+                ORDER BY id ASC
+                """,
+                (status,),
+            ).fetchall()
+
         return [
-            KnowledgeDocument(
-                id=int(record["id"]),
-                title=str(record["title"]),
-                category=str(record["category"]),
-                content=str(record["content"]),
-                source_name=str(record["source_name"]),
-                status=str(record["status"]),
-                created_at=str(record["created_at"]),
-                updated_at=str(record["updated_at"]),
+            KnowledgeChunk(
+                source=str(row["source"]),
+                text=str(row["text"]),
+                document_id=int(row["document_id"]),
+                title=str(row["title"]) if row["title"] is not None else None,
+                category=str(row["category"]) if row["category"] is not None else None,
             )
-            for record in payload["documents"]
+            for row in rows
         ]
 
-    def _read_payload(self) -> dict[str, object]:
-        if not self._path.exists():
-            return {"next_id": 1, "documents": []}
+    def _load_documents(self) -> list[KnowledgeDocument]:
+        return self.list_documents()
 
-        payload = json.loads(self._path.read_text(encoding="utf-8"))
-        if "next_id" not in payload or "documents" not in payload:
-            return {"next_id": 1, "documents": []}
-        return payload
-
-    def _write_payload(self, payload: dict[str, object]) -> None:
+    def _connect(self) -> sqlite3.Connection:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        connection = sqlite3.connect(self._path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        self._ensure_schema(connection)
+        return connection
+
+    def _ensure_schema(self, connection: sqlite3.Connection) -> None:
+        connection.execute(DOCUMENTS_SCHEMA_SQL)
+        connection.execute(CHUNKS_SCHEMA_SQL)
+        connection.commit()
+
+    def _replace_document_chunks(
+        self,
+        connection: sqlite3.Connection,
+        document: KnowledgeDocument,
+    ) -> None:
+        connection.execute(
+            "DELETE FROM knowledge_chunks WHERE document_id = ?",
+            (document.id,),
         )
+        if document.status != "active":
+            return
+
+        now = _now_iso()
+        for chunk in build_chunks_from_documents([document]):
+            connection.execute(
+                """
+                INSERT INTO knowledge_chunks (
+                    document_id, source, text, title, category, status,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    document.id,
+                    chunk.source,
+                    chunk.text,
+                    chunk.title,
+                    chunk.category,
+                    document.status,
+                    now,
+                    now,
+                ),
+            )
+
+    def _row_to_document(self, row: sqlite3.Row) -> KnowledgeDocument:
+        return KnowledgeDocument(
+            id=int(row["id"]),
+            title=str(row["title"]),
+            category=str(row["category"]),
+            content=str(row["content"]),
+            source_name=str(row["source_name"]),
+            status=str(row["status"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    def _migrate_legacy_json_if_needed(self) -> None:
+        if not self._path.exists():
+            return
+        try:
+            with self._connect() as connection:
+                connection.execute("SELECT 1 FROM knowledge_documents LIMIT 1")
+            return
+        except sqlite3.DatabaseError:
+            pass
+
+        try:
+            payload = json.loads(self._path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return
+        records = payload.get("documents")
+        if not isinstance(records, list):
+            return
+
+        legacy_path = self._path.with_suffix(self._path.suffix + ".legacy-json")
+        self._path.replace(legacy_path)
+        with self._connect() as connection:
+            for record in records:
+                document = KnowledgeDocument(
+                    id=int(record["id"]),
+                    title=str(record["title"]),
+                    category=str(record["category"]),
+                    content=str(record["content"]),
+                    source_name=str(record["source_name"]),
+                    status=str(record["status"]),
+                    created_at=str(record["created_at"]),
+                    updated_at=str(record["updated_at"]),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO knowledge_documents (
+                        id, title, category, content, source_name, status,
+                        created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        document.id,
+                        document.title,
+                        document.category,
+                        document.content,
+                        document.source_name,
+                        document.status,
+                        document.created_at,
+                        document.updated_at,
+                    ),
+                )
+                self._replace_document_chunks(connection, document)
+            connection.commit()
 
 
 class KnowledgeBase:
@@ -563,9 +761,14 @@ def _default_documents_path() -> Path:
         Path(__file__).resolve().parents[3]
         / "data"
         / "runtime"
-        / "knowledge_documents.json"
+        / "knowledge.db"
     )
-    return Path(os.getenv("KNOWLEDGE_DOCUMENTS_PATH", str(default_path)))
+    return Path(
+        os.getenv(
+            "KNOWLEDGE_DOCUMENTS_PATH",
+            os.getenv("KNOWLEDGE_DATABASE_PATH", str(default_path)),
+        )
+    )
 
 
 def _now_iso() -> str:

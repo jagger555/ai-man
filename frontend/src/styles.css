@@ -4712,6 +4712,24 @@ textarea {
 
   .main-layout:not(.admin-mode) {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    overflow: visible;
+  }
+
+  .main-layout:not(.admin-mode) .left-column {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .main-layout:not(.admin-mode) .right-column {
+    grid-column: 1;
+    grid-row: 2;
+    overflow: visible;
+  }
+
+  .main-layout:not(.admin-mode) .today-recommend-bar {
+    grid-column: 1;
+    grid-row: 3;
   }
 
   .digital-human-live-card {

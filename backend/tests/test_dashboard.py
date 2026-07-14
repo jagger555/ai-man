@@ -23,8 +23,12 @@ def test_admin_dashboard_returns_empty_7_day_contract(monkeypatch, tmp_path):
 
     assert body["summary"] == {
         "total_records": 0,
+        "question_count": 0,
+        "emoji_interaction_count": 0,
         "today_records": 0,
         "week_records": 0,
+        "period_records": 0,
+        "period_days": 7,
         "average_response_time_ms": 0,
         "low_confidence_count": 0,
         "accuracy_rate": 0.0,
@@ -34,9 +38,12 @@ def test_admin_dashboard_returns_empty_7_day_contract(monkeypatch, tmp_path):
         "feedback_helpful_rate": 0.0,
     }
     assert body["popular_questions"] == []
+    assert body["emoji_distribution"] == []
+    assert body["topic_distribution"] == []
     assert body["visitor_analytics"] == {}
     assert len(body["weekly_service_trend"]) == 7
     assert len(body["satisfaction_trend"]) == 7
+    assert len(body["emoji_trend"]) == 7
     assert [item["date"] for item in body["weekly_service_trend"]] == _last_7_dates()
     assert all(item["service_count"] == 0 for item in body["weekly_service_trend"])
     assert all(item["feedback_count"] == 0 for item in body["satisfaction_trend"])
@@ -142,6 +149,8 @@ def test_admin_dashboard_aggregates_trends_popular_questions_and_feedback(
     body = response.json()
 
     assert body["summary"]["total_records"] == 5
+    assert body["summary"]["question_count"] == 5
+    assert body["summary"]["emoji_interaction_count"] == 0
     assert body["summary"]["today_records"] == 2
     assert body["summary"]["week_records"] == 4
     assert body["summary"]["low_confidence_count"] == 1
@@ -185,6 +194,21 @@ def test_admin_dashboard_aggregates_trends_popular_questions_and_feedback(
     assert satisfaction_by_date[(today - timedelta(days=1)).isoformat()][
         "feedback_count"
     ] == 0
+
+
+def test_admin_dashboard_days_filter_changes_returned_range(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "chat_records.db"))
+    client = TestClient(app)
+
+    for days in (1, 7, 30):
+        response = client.get("/api/admin/dashboard", params={"days": days})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["summary"]["period_days"] == days
+        assert len(body["service_trend"]) == days
+        assert len(body["emoji_trend"]) == days
+
+    assert client.get("/api/admin/dashboard", params={"days": 2}).status_code == 422
 
 
 def _save_record(

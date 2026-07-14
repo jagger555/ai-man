@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-def test_visitor_report_summarizes_focus_sentiment_and_suggestions(
+def test_visitor_report_summarizes_focus_feedback_and_suggestions(
     monkeypatch,
     tmp_path,
 ):
@@ -66,13 +66,15 @@ def test_visitor_report_summarizes_focus_sentiment_and_suggestions(
     summary = body["summary"]
     assert summary["total_records"] == 3
     assert summary["feedback_count"] == 2
-    assert summary["positive_count"] == 1
-    assert summary["negative_count"] >= 1
+    assert summary["helpful_count"] == 1
+    assert summary["unhelpful_count"] == 1
     assert summary["low_confidence_count"] >= 1
 
     focus_topics = {item["topic"] for item in body["focus_points"]}
     assert "核心景点" in focus_topics
     assert "交通到达" in focus_topics
-    assert body["sentiment_trend"][0]["total_count"] == 3
+    assert body["feedback_trend"][-1]["question_count"] == 3
+    assert body["feedback_trend"][-1]["helpful_count"] == 1
+    assert body["feedback_trend"][-1]["unhelpful_count"] == 1
     assert body["suggestions"]
     assert all(item["title"] and item["action"] for item in body["suggestions"])

@@ -27,11 +27,11 @@ export function VisitorReportPanel({
   );
 
   return (
-    <section className="visitor-report-panel" aria-label="游客感受度报告">
+    <section className="visitor-report-panel" aria-label="游客互动与服务反馈">
       <div className="report-panel-head">
         <div>
-          <strong>游客感受度报告</strong>
-          <p>按交互记录、游客反馈、低置信度问题生成关注点、情绪趋势和服务建议。</p>
+          <strong>游客互动与服务反馈</strong>
+          <p>按真实问答、积极 Emoji、服务反馈和低置信问题生成运营建议。</p>
         </div>
         <div className="report-head-actions">
           <span className="panel-note">
@@ -58,19 +58,19 @@ export function VisitorReportPanel({
         <>
           <section className="report-summary-grid">
             <article className="report-metric-card">
-              <small>交互样本</small>
-              <strong>{summary?.total_records ?? 0}</strong>
-              <p>反馈 {summary?.feedback_count ?? 0} 条</p>
+              <small>问答样本</small>
+              <strong>{summary?.question_count ?? 0}</strong>
+              <p>当前筛选范围内的正常问答</p>
             </article>
             <article className="report-metric-card">
-              <small>正向感受</small>
-              <strong>{formatPercent(summary?.positive_rate ?? 0)}</strong>
-              <p>{summary?.positive_count ?? 0} 条正向记录</p>
+              <small>积极 Emoji 互动</small>
+              <strong>{summary?.emoji_interaction_count ?? 0}</strong>
+              <p>固定回复，不进入问答质检</p>
             </article>
             <article className="report-metric-card">
-              <small>负向感受</small>
-              <strong>{formatPercent(summary?.negative_rate ?? 0)}</strong>
-              <p>{summary?.negative_count ?? 0} 条负向记录</p>
+              <small>有帮助率</small>
+              <strong>{formatPercent(summary?.helpful_rate ?? 0)}</strong>
+              <p>{summary?.helpful_count ?? 0} 条有帮助反馈</p>
             </article>
             <article className="report-metric-card">
               <small>知识风险</small>
@@ -108,8 +108,8 @@ export function VisitorReportPanel({
                       </div>
                       <div className="record-row-meta">
                         <span>占比 {formatPercent(focus.share)}</span>
-                        <span>正向 {focus.positive_count}</span>
-                        <span>负向 {focus.negative_count}</span>
+                        <span>有帮助 {focus.helpful_count}</span>
+                        <span>无帮助 {focus.unhelpful_count}</span>
                         <span>低置信 {focus.low_confidence_count}</span>
                       </div>
                       {focus.keywords.length > 0 ? (
@@ -132,54 +132,61 @@ export function VisitorReportPanel({
 
             <section className="report-card sentiment-report-card">
               <div className="report-card-head">
-                <strong>情绪趋势</strong>
-                <span>{report.sentiment_trend.length} 天</span>
+                <strong>服务反馈趋势</strong>
+                <span>{report.feedback_trend.length} 天</span>
               </div>
-              {report.sentiment_trend.length > 0 ? (
+              {report.feedback_trend.length > 0 ? (
                 <div className="sentiment-list">
-                  {report.sentiment_trend.slice(-7).map((trend) => {
-                    const positiveWidth = trend.total_count
-                      ? (trend.positive_count / trend.total_count) * 100
+                  {report.feedback_trend.slice(-7).map((trend) => {
+                    const helpfulWidth = trend.question_count
+                      ? (trend.helpful_count / trend.question_count) * 100
                       : 0;
-                    const neutralWidth = trend.total_count
-                      ? (trend.neutral_count / trend.total_count) * 100
+                    const unratedWidth = trend.question_count
+                      ? (trend.unrated_count / trend.question_count) * 100
                       : 0;
-                    const negativeWidth = trend.total_count
-                      ? (trend.negative_count / trend.total_count) * 100
+                    const unhelpfulWidth = trend.question_count
+                      ? (trend.unhelpful_count / trend.question_count) * 100
                       : 0;
 
                     return (
                       <article key={trend.date} className="sentiment-row">
                         <div className="sentiment-row-head">
                           <strong>{trend.date}</strong>
-                          <span>{trend.total_count} 条</span>
+                          <span>{trend.question_count} 条</span>
                         </div>
                         <div className="sentiment-stack" aria-hidden="true">
                           <span
                             className="sentiment-positive"
-                            style={{ width: `${positiveWidth}%` }}
+                            style={{ width: `${helpfulWidth}%` }}
                           />
                           <span
                             className="sentiment-neutral"
-                            style={{ width: `${neutralWidth}%` }}
+                            style={{ width: `${unratedWidth}%` }}
                           />
                           <span
                             className="sentiment-negative"
-                            style={{ width: `${negativeWidth}%` }}
+                            style={{ width: `${unhelpfulWidth}%` }}
                           />
                         </div>
                         <div className="record-row-meta">
-                          <span>正向 {trend.positive_count}</span>
-                          <span>中性 {trend.neutral_count}</span>
-                          <span>负向 {trend.negative_count}</span>
+                          <span>有帮助 {trend.helpful_count}</span>
+                          <span>未反馈 {trend.unrated_count}</span>
+                          <span>无帮助 {trend.unhelpful_count}</span>
                         </div>
                       </article>
                     );
                   })}
                 </div>
               ) : (
-                <div className="empty-state">暂无情绪趋势数据。</div>
+                <div className="empty-state">暂无服务反馈数据。</div>
               )}
+              {report.emoji_distribution.length > 0 ? (
+                <div className="keyword-strip positive-emoji-summary" aria-label="积极 Emoji 分布">
+                  {report.emoji_distribution.map((item) => (
+                    <span key={item.emoji}>{item.emoji} {item.count}</span>
+                  ))}
+                </div>
+              ) : null}
             </section>
 
             <section className="report-card suggestion-report-card">
@@ -214,7 +221,7 @@ export function VisitorReportPanel({
         </>
       ) : (
         <div className="empty-state">
-          {isLoading ? "正在生成游客感受度报告..." : "暂无游客感受度报告。"}
+          {isLoading ? "正在生成游客互动报告..." : "暂无游客互动报告。"}
         </div>
       )}
     </section>

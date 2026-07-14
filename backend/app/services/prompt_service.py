@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from app.services.emoji_interaction_service import strip_emojis
+
 GUIDE_SYSTEM_PROMPT = """你是“灵山胜境 AI 数字人导游”，服务于无锡灵山胜境景区游客。
 
 你的核心任务是：为游客提供准确、友好、有文化感、不过度宗教化的景区导览、路线推荐、景点讲解、游玩规划、服务咨询和安全提醒。
@@ -40,7 +42,7 @@ class PromptContext:
 
 
 def clean_question(question: str) -> str:
-    cleaned = re.sub(r"\s+", " ", question).strip()
+    cleaned = re.sub(r"\s+", " ", strip_emojis(question)).strip()
     cleaned = re.sub(r"[?？]{2,}$", "？", cleaned)
     return cleaned
 

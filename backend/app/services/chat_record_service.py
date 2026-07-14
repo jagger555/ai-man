@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -27,6 +28,8 @@ CREATE TABLE IF NOT EXISTS chat_records (
     model_provider TEXT NOT NULL,
     model_status TEXT NOT NULL,
     response_time_ms INTEGER NOT NULL,
+    interaction_type TEXT NOT NULL DEFAULT 'question',
+    emoji_value TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -60,6 +63,8 @@ class ChatRecord:
     model_provider: str
     model_status: str
     response_time_ms: int
+    interaction_type: str = "question"
+    emoji_value: str = ""
 
 
 class ChatRecordService:
@@ -84,8 +89,10 @@ class ChatRecordService:
                     sources_json,
                     model_provider,
                     model_status,
-                    response_time_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    response_time_ms,
+                    interaction_type,
+                    emoji_value
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.session_id,
@@ -101,6 +108,8 @@ class ChatRecordService:
                     record.model_provider,
                     record.model_status,
                     record.response_time_ms,
+                    record.interaction_type,
+                    record.emoji_value,
                 ),
             )
             connection.commit()
@@ -112,7 +121,8 @@ class ChatRecordService:
             SELECT id, session_id, original_question, cleaned_question, answer,
                    prompt_text, confidence, reliable, history_turns_used,
                    source_count, sources_json, model_provider,
-                   model_status, response_time_ms, created_at
+                   model_status, response_time_ms, interaction_type,
+                   emoji_value, created_at
             FROM chat_records
             ORDER BY id DESC
             LIMIT ?
@@ -131,9 +141,31 @@ class ChatRecordService:
             SELECT id, session_id, original_question, cleaned_question, answer,
                    prompt_text, confidence, reliable, history_turns_used,
                    source_count, sources_json, model_provider,
-                   model_status, response_time_ms, created_at
+                   model_status, response_time_ms, interaction_type,
+                   emoji_value, created_at
             FROM chat_records
             WHERE session_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (session_id, limit),
+        )
+        return [_row_to_record(row) for row in rows]
+
+    def list_session_question_records(
+        self,
+        session_id: str,
+        limit: int = 20,
+    ) -> list[dict[str, object]]:
+        rows = self._fetch_rows(
+            """
+            SELECT id, session_id, original_question, cleaned_question, answer,
+                   prompt_text, confidence, reliable, history_turns_used,
+                   source_count, sources_json, model_provider,
+                   model_status, response_time_ms, interaction_type,
+                   emoji_value, created_at
+            FROM chat_records
+            WHERE session_id = ? AND interaction_type = 'question'
             ORDER BY id DESC
             LIMIT ?
             """,
@@ -160,9 +192,11 @@ class ChatRecordService:
             SELECT id, session_id, original_question, cleaned_question, answer,
                    prompt_text, confidence, reliable, history_turns_used,
                    source_count, sources_json, model_provider,
-                   model_status, response_time_ms, created_at
+                   model_status, response_time_ms, interaction_type,
+                   emoji_value, created_at
             FROM chat_records
-            WHERE reliable = 0 OR confidence < 0.5 OR source_count = 0
+            WHERE interaction_type = 'question'
+              AND (reliable = 0 OR confidence < 0.5 OR source_count = 0)
             ORDER BY id DESC
             LIMIT ?
             """,
@@ -177,7 +211,8 @@ class ChatRecordService:
                 """
                 SELECT COUNT(*)
                 FROM chat_records
-                WHERE reliable = 0 OR confidence < 0.5 OR source_count = 0
+                WHERE interaction_type = 'question'
+                  AND (reliable = 0 OR confidence < 0.5 OR source_count = 0)
                 """
             ).fetchone()
         return int(row[0]) if row else 0
@@ -189,21 +224,30 @@ class ChatRecordService:
                 """
                 SELECT
                     COUNT(*) AS total_records,
+                    COALESCE(SUM(CASE WHEN interaction_type = 'question' THEN 1 ELSE 0 END), 0)
+                        AS question_count,
+                    COALESCE(SUM(CASE WHEN interaction_type = 'emoji' THEN 1 ELSE 0 END), 0)
+                        AS emoji_interaction_count,
                     COALESCE(
                         SUM(
                             CASE
                                 WHEN DATE(created_at, 'localtime') = DATE('now', 'localtime')
+                                     AND interaction_type = 'question'
                                 THEN 1
                                 ELSE 0
                             END
                         ),
                         0
                     ) AS today_records,
-                    COALESCE(ROUND(AVG(response_time_ms)), 0) AS average_response_time_ms,
+                    COALESCE(
+                        ROUND(AVG(CASE WHEN interaction_type = 'question' THEN response_time_ms END)),
+                        0
+                    ) AS average_response_time_ms,
                     COALESCE(
                         SUM(
                             CASE
-                                WHEN reliable = 0 OR confidence < 0.5 OR source_count = 0
+                                WHEN interaction_type = 'question'
+                                     AND (reliable = 0 OR confidence < 0.5 OR source_count = 0)
                                 THEN 1
                                 ELSE 0
                             END
@@ -213,7 +257,8 @@ class ChatRecordService:
                     COALESCE(
                         SUM(
                             CASE
-                                WHEN model_status LIKE 'fallback_to_mock:%' THEN 1
+                                WHEN interaction_type = 'question'
+                                     AND model_status LIKE 'fallback_to_mock:%' THEN 1
                                 ELSE 0
                             END
                         ),
@@ -222,7 +267,8 @@ class ChatRecordService:
                     COALESCE(
                         SUM(
                             CASE
-                                WHEN model_provider = 'mock'
+                                WHEN interaction_type = 'question'
+                                     AND model_provider = 'mock'
                                      AND model_status NOT LIKE 'fallback_to_mock:%'
                                 THEN 1
                                 ELSE 0
@@ -233,7 +279,8 @@ class ChatRecordService:
                     COALESCE(
                         SUM(
                             CASE
-                                WHEN model_provider NOT IN ('mock', 'retrieval_guard')
+                                WHEN interaction_type = 'question'
+                                     AND model_provider NOT IN ('mock', 'retrieval_guard', 'fixed')
                                      AND model_status NOT LIKE 'fallback_to_mock:%'
                                 THEN 1
                                 ELSE 0
@@ -248,6 +295,8 @@ class ChatRecordService:
         if row is None:
             return {
                 "total_records": 0,
+                "question_count": 0,
+                "emoji_interaction_count": 0,
                 "today_records": 0,
                 "average_response_time_ms": 0,
                 "low_confidence_count": 0,
@@ -271,99 +320,91 @@ class ChatRecordService:
 
         return {
             "total_records": int(row[0]),
-            "today_records": int(row[1]),
-            "average_response_time_ms": int(row[2]),
-            "low_confidence_count": int(row[3]),
-            "fallback_count": int(row[4]),
-            "mock_model_count": int(row[5]),
-            "real_model_count": int(row[6]),
+            "question_count": int(row[1]),
+            "emoji_interaction_count": int(row[2]),
+            "today_records": int(row[3]),
+            "average_response_time_ms": int(row[4]),
+            "low_confidence_count": int(row[5]),
+            "fallback_count": int(row[6]),
+            "mock_model_count": int(row[7]),
+            "real_model_count": int(row[8]),
             "feedback_total_count": feedback_total_count,
             "feedback_helpful_count": feedback_helpful_count,
             "feedback_unhelpful_count": feedback_unhelpful_count,
             "feedback_helpful_rate": feedback_helpful_rate,
         }
 
-    def get_dashboard_metrics(self, limit: int = 8) -> dict[str, object]:
+    def get_dashboard_metrics(self, limit: int = 8, days: int = 7) -> dict[str, object]:
         limit = min(max(limit, 1), 50)
+        days = days if days in {1, 7, 30} else 7
         self._ensure_database()
 
         today = date.today()
-        trend_dates = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
+        trend_dates = [
+            today - timedelta(days=offset) for offset in range(days - 1, -1, -1)
+        ]
         trend_start = trend_dates[0].isoformat()
 
         with sqlite3.connect(self._config.path) as connection:
             connection.row_factory = sqlite3.Row
-
             summary_row = connection.execute(
                 """
                 SELECT
                     COUNT(*) AS total_records,
-                    COALESCE(
-                        SUM(
-                            CASE
-                                WHEN DATE(created_at, 'localtime') = DATE('now', 'localtime')
-                                THEN 1
-                                ELSE 0
-                            END
-                        ),
-                        0
-                    ) AS today_records,
-                    COALESCE(
-                        SUM(
-                            CASE
-                                WHEN DATE(created_at, 'localtime') >= DATE('now', 'localtime', '-6 day')
-                                     AND DATE(created_at, 'localtime') <= DATE('now', 'localtime')
-                                THEN 1
-                                ELSE 0
-                            END
-                        ),
-                        0
-                    ) AS week_records,
-                    COALESCE(ROUND(AVG(response_time_ms)), 0) AS average_response_time_ms,
-                    COALESCE(
-                        SUM(
-                            CASE
-                                WHEN reliable = 0 OR confidence < 0.5 OR source_count = 0
-                                THEN 1
-                                ELSE 0
-                            END
-                        ),
-                        0
-                    ) AS low_confidence_count
+                    COALESCE(SUM(CASE WHEN interaction_type = 'question' THEN 1 ELSE 0 END), 0)
+                        AS question_count,
+                    COALESCE(SUM(CASE WHEN interaction_type = 'emoji' THEN 1 ELSE 0 END), 0)
+                        AS emoji_interaction_count,
+                    COALESCE(SUM(CASE
+                        WHEN interaction_type = 'question'
+                         AND DATE(created_at, 'localtime') = DATE('now', 'localtime')
+                        THEN 1 ELSE 0 END), 0) AS today_records,
+                    COALESCE(SUM(CASE
+                        WHEN interaction_type = 'question'
+                         AND DATE(created_at, 'localtime') >= DATE('now', 'localtime', '-6 day')
+                        THEN 1 ELSE 0 END), 0) AS week_records,
+                    COALESCE(SUM(CASE
+                        WHEN interaction_type = 'question'
+                         AND DATE(created_at, 'localtime') >= ?
+                        THEN 1 ELSE 0 END), 0) AS period_records,
+                    COALESCE(ROUND(AVG(CASE
+                        WHEN interaction_type = 'question'
+                         AND DATE(created_at, 'localtime') >= ?
+                        THEN response_time_ms END)), 0) AS average_response_time_ms,
+                    COALESCE(SUM(CASE
+                        WHEN interaction_type = 'question'
+                         AND DATE(created_at, 'localtime') >= ?
+                         AND (reliable = 0 OR confidence < 0.5 OR source_count = 0)
+                        THEN 1 ELSE 0 END), 0) AS low_confidence_count
                 FROM chat_records
-                """
+                """,
+                (trend_start, trend_start, trend_start),
             ).fetchone()
 
             feedback_summary_row = connection.execute(
                 """
-                SELECT
-                    COUNT(*) AS feedback_total_count,
+                SELECT COUNT(*) AS feedback_total_count,
                     COALESCE(SUM(CASE WHEN rating = 'helpful' THEN 1 ELSE 0 END), 0)
                         AS feedback_helpful_count,
                     COALESCE(SUM(CASE WHEN rating = 'unhelpful' THEN 1 ELSE 0 END), 0)
                         AS feedback_unhelpful_count
                 FROM chat_feedback
-                """
+                WHERE DATE(created_at, 'localtime') >= ?
+                """,
+                (trend_start,),
             ).fetchone()
 
             weekly_rows = connection.execute(
                 """
-                SELECT
-                    DATE(created_at, 'localtime') AS record_date,
+                SELECT DATE(created_at, 'localtime') AS record_date,
                     COUNT(*) AS service_count,
-                    COALESCE(
-                        SUM(
-                            CASE
-                                WHEN reliable = 0 OR confidence < 0.5 OR source_count = 0
-                                THEN 1
-                                ELSE 0
-                            END
-                        ),
-                        0
-                    ) AS low_confidence_count,
+                    COALESCE(SUM(CASE
+                        WHEN reliable = 0 OR confidence < 0.5 OR source_count = 0
+                        THEN 1 ELSE 0 END), 0) AS low_confidence_count,
                     COALESCE(ROUND(AVG(response_time_ms)), 0) AS average_response_time_ms
                 FROM chat_records
-                WHERE DATE(created_at, 'localtime') >= ?
+                WHERE interaction_type = 'question'
+                  AND DATE(created_at, 'localtime') >= ?
                   AND DATE(created_at, 'localtime') <= DATE('now', 'localtime')
                 GROUP BY record_date
                 """,
@@ -372,41 +413,31 @@ class ChatRecordService:
 
             popular_rows = connection.execute(
                 """
-                SELECT
-                    questions.question AS question,
-                    COUNT(*) AS count,
+                SELECT questions.question AS question, COUNT(*) AS count,
                     MAX(questions.created_at) AS latest_at,
                     COALESCE(ROUND(AVG(questions.confidence), 2), 0) AS average_confidence,
-                    COALESCE(
-                        SUM(CASE WHEN feedback.rating = 'helpful' THEN 1 ELSE 0 END),
-                        0
-                    ) AS helpful_count,
-                    COALESCE(
-                        SUM(CASE WHEN feedback.rating = 'unhelpful' THEN 1 ELSE 0 END),
-                        0
-                    ) AS unhelpful_count
+                    COALESCE(SUM(CASE WHEN feedback.rating = 'helpful' THEN 1 ELSE 0 END), 0)
+                        AS helpful_count,
+                    COALESCE(SUM(CASE WHEN feedback.rating = 'unhelpful' THEN 1 ELSE 0 END), 0)
+                        AS unhelpful_count
                 FROM (
-                    SELECT
-                        id,
-                        COALESCE(NULLIF(TRIM(cleaned_question), ''), original_question)
-                            AS question,
-                        confidence,
-                        created_at
+                    SELECT id, COALESCE(NULLIF(TRIM(cleaned_question), ''), original_question)
+                        AS question, confidence, created_at
                     FROM chat_records
+                    WHERE interaction_type = 'question'
+                      AND DATE(created_at, 'localtime') >= ?
                 ) AS questions
-                LEFT JOIN chat_feedback AS feedback
-                  ON feedback.record_id = questions.id
+                LEFT JOIN chat_feedback AS feedback ON feedback.record_id = questions.id
                 GROUP BY questions.question
                 ORDER BY count DESC, latest_at DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (trend_start, limit),
             ).fetchall()
 
             satisfaction_rows = connection.execute(
                 """
-                SELECT
-                    DATE(created_at, 'localtime') AS feedback_date,
+                SELECT DATE(created_at, 'localtime') AS feedback_date,
                     COUNT(*) AS feedback_count,
                     COALESCE(SUM(CASE WHEN rating = 'helpful' THEN 1 ELSE 0 END), 0)
                         AS helpful_count,
@@ -420,35 +451,72 @@ class ChatRecordService:
                 (trend_start,),
             ).fetchall()
 
+            emoji_rows = connection.execute(
+                """
+                SELECT emoji_value, COUNT(*) AS count
+                FROM chat_records
+                WHERE interaction_type = 'emoji'
+                  AND DATE(created_at, 'localtime') >= ?
+                GROUP BY emoji_value
+                ORDER BY count DESC, emoji_value
+                """,
+                (trend_start,),
+            ).fetchall()
+            emoji_trend_rows = connection.execute(
+                """
+                SELECT DATE(created_at, 'localtime') AS record_date, COUNT(*) AS count
+                FROM chat_records
+                WHERE interaction_type = 'emoji'
+                  AND DATE(created_at, 'localtime') >= ?
+                GROUP BY record_date
+                """,
+                (trend_start,),
+            ).fetchall()
+            topic_rows = connection.execute(
+                """
+                SELECT cleaned_question
+                FROM chat_records
+                WHERE interaction_type = 'question'
+                  AND DATE(created_at, 'localtime') >= ?
+                """,
+                (trend_start,),
+            ).fetchall()
+
         feedback_total_count = int(feedback_summary_row["feedback_total_count"])
         feedback_helpful_count = int(feedback_summary_row["feedback_helpful_count"])
         feedback_unhelpful_count = int(feedback_summary_row["feedback_unhelpful_count"])
-
         weekly_by_date = {row["record_date"]: row for row in weekly_rows}
         satisfaction_by_date = {row["feedback_date"]: row for row in satisfaction_rows}
+        emoji_by_date = {row["record_date"]: int(row["count"]) for row in emoji_trend_rows}
+        emoji_total = sum(int(row["count"]) for row in emoji_rows)
+        topic_counts = Counter(_classify_topic(str(row["cleaned_question"])) for row in topic_rows)
+        topic_total = sum(topic_counts.values())
 
         summary = {
             "total_records": int(summary_row["total_records"]),
+            "question_count": int(summary_row["question_count"]),
+            "emoji_interaction_count": int(summary_row["emoji_interaction_count"]),
             "today_records": int(summary_row["today_records"]),
             "week_records": int(summary_row["week_records"]),
+            "period_records": int(summary_row["period_records"]),
+            "period_days": days,
             "average_response_time_ms": int(summary_row["average_response_time_ms"]),
             "low_confidence_count": int(summary_row["low_confidence_count"]),
             "accuracy_rate": _load_latest_accuracy_rate(),
             "feedback_total_count": feedback_total_count,
             "feedback_helpful_count": feedback_helpful_count,
             "feedback_unhelpful_count": feedback_unhelpful_count,
-            "feedback_helpful_rate": _safe_rate(
-                feedback_helpful_count,
-                feedback_total_count,
-            ),
+            "feedback_helpful_rate": _safe_rate(feedback_helpful_count, feedback_total_count),
         }
+        service_trend = [
+            _weekly_trend_item(day, weekly_by_date.get(day.isoformat()))
+            for day in trend_dates
+        ]
 
         return {
             "summary": summary,
-            "weekly_service_trend": [
-                _weekly_trend_item(day, weekly_by_date.get(day.isoformat()))
-                for day in trend_dates
-            ],
+            "weekly_service_trend": service_trend,
+            "service_trend": service_trend,
             "popular_questions": [
                 {
                     "question": row["question"],
@@ -464,10 +532,24 @@ class ChatRecordService:
                 _satisfaction_trend_item(day, satisfaction_by_date.get(day.isoformat()))
                 for day in trend_dates
             ],
+            "emoji_distribution": [
+                {
+                    "emoji": row["emoji_value"] or "other",
+                    "count": int(row["count"]),
+                    "share": _safe_rate(int(row["count"]), emoji_total),
+                }
+                for row in emoji_rows
+            ],
+            "emoji_trend": [
+                {"date": day.isoformat(), "count": emoji_by_date.get(day.isoformat(), 0)}
+                for day in trend_dates
+            ],
+            "topic_distribution": [
+                {"topic": topic, "count": count, "share": _safe_rate(count, topic_total)}
+                for topic, count in topic_counts.most_common()
+            ],
             "visitor_analytics": (
-                VisitorAnalyticsService().get_summary()
-                if summary["total_records"] > 0
-                else {}
+                VisitorAnalyticsService().get_summary() if summary["total_records"] > 0 else {}
             ),
         }
 
@@ -611,6 +693,8 @@ def _row_to_record(row: sqlite3.Row) -> dict[str, object]:
         "model_provider": row["model_provider"],
         "model_status": row["model_status"],
         "response_time_ms": int(row["response_time_ms"]),
+        "interaction_type": row["interaction_type"],
+        "emoji_value": row["emoji_value"],
         "created_at": row["created_at"],
     }
 
@@ -676,6 +760,22 @@ def _safe_rate(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 2) if denominator > 0 else 0.0
 
 
+TOPIC_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("景点", ("大佛", "梵宫", "九龙灌浴", "五印坛城", "景点", "佛足坛")),
+    ("路线", ("路线", "怎么走", "游览", "行程", "导航", "顺序")),
+    ("演出", ("演出", "表演", "时间", "场次", "吉祥颂")),
+    ("交通", ("停车", "公交", "地铁", "交通", "打车", "入口")),
+    ("服务", ("厕所", "餐饮", "服务", "游客中心", "轮椅", "寄存")),
+)
+
+
+def _classify_topic(question: str) -> str:
+    for topic, keywords in TOPIC_RULES:
+        if any(keyword in question for keyword in keywords):
+            return topic
+    return "其他"
+
+
 def _load_latest_accuracy_rate() -> float:
     metrics_path = Path(
         os.getenv(
@@ -719,8 +819,18 @@ def _ensure_required_columns(connection: sqlite3.Connection) -> None:
     required_columns = {
         "prompt_text": "ALTER TABLE chat_records ADD COLUMN prompt_text TEXT NOT NULL DEFAULT ''",
         "history_turns_used": "ALTER TABLE chat_records ADD COLUMN history_turns_used INTEGER NOT NULL DEFAULT 0",
+        "interaction_type": "ALTER TABLE chat_records ADD COLUMN interaction_type TEXT NOT NULL DEFAULT 'question'",
+        "emoji_value": "ALTER TABLE chat_records ADD COLUMN emoji_value TEXT NOT NULL DEFAULT ''",
     }
 
     for column_name, sql in required_columns.items():
         if column_name not in existing_columns:
             connection.execute(sql)
+
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_records_created_at ON chat_records(created_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_records_interaction_type "
+        "ON chat_records(interaction_type)"
+    )

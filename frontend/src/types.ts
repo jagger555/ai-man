@@ -22,6 +22,8 @@ export type ChatResponse = {
   record_id: number | null;
   record_status: string;
   latency_ms: number;
+  interaction_type: "question" | "emoji";
+  emoji_value: string;
 };
 
 export type DigitalHumanConfig = {
@@ -85,6 +87,8 @@ export type ChatRecord = {
   model_provider: string;
   model_status: string;
   response_time_ms: number;
+  interaction_type: "question" | "emoji";
+  emoji_value: string;
   created_at: string;
 };
 
@@ -125,7 +129,15 @@ export type FeedbackListResponse = {
 
 export type VisitorReportSummary = {
   total_records: number;
+  question_count: number;
+  emoji_interaction_count: number;
+  period_days: number;
   feedback_count: number;
+  helpful_count: number;
+  unhelpful_count: number;
+  unrated_count: number;
+  helpful_rate: number;
+  unhelpful_rate: number;
   positive_count: number;
   neutral_count: number;
   negative_count: number;
@@ -143,6 +155,8 @@ export type VisitorFocusPoint = {
   share: number;
   positive_count: number;
   negative_count: number;
+  helpful_count: number;
+  unhelpful_count: number;
   low_confidence_count: number;
   average_confidence: number;
   sample_questions: string[];
@@ -159,6 +173,27 @@ export type VisitorSentimentTrend = {
   negative_rate: number;
 };
 
+export type VisitorFeedbackTrend = {
+  date: string;
+  question_count: number;
+  helpful_count: number;
+  unhelpful_count: number;
+  unrated_count: number;
+  helpful_rate: number;
+  unhelpful_rate: number;
+};
+
+export type EmojiDistributionItem = {
+  emoji: string;
+  count: number;
+  share: number;
+};
+
+export type EmojiTrendPoint = {
+  date: string;
+  count: number;
+};
+
 export type VisitorReportSuggestion = {
   priority: "high" | "medium" | "low";
   title: string;
@@ -170,14 +205,21 @@ export type VisitorReportSuggestion = {
 export type VisitorReport = {
   summary: VisitorReportSummary;
   focus_points: VisitorFocusPoint[];
+  feedback_trend: VisitorFeedbackTrend[];
+  emoji_distribution: EmojiDistributionItem[];
+  emoji_trend: EmojiTrendPoint[];
   sentiment_trend: VisitorSentimentTrend[];
   suggestions: VisitorReportSuggestion[];
 };
 
 export type DashboardSummary = {
   total_records: number;
+  question_count: number;
+  emoji_interaction_count: number;
   today_records: number;
   week_records: number;
+  period_records: number;
+  period_days: number;
   average_response_time_ms: number;
   low_confidence_count: number;
   accuracy_rate: number;
@@ -232,9 +274,19 @@ export type SatisfactionTrendPoint = {
   helpful_rate: number;
 };
 
+export type TopicDistributionItem = {
+  topic: string;
+  count: number;
+  share: number;
+};
+
 export type DashboardData = {
   summary: DashboardSummary;
   weekly_service_trend: WeeklyServiceTrendPoint[];
+  service_trend: WeeklyServiceTrendPoint[];
+  emoji_distribution: EmojiDistributionItem[];
+  emoji_trend: EmojiTrendPoint[];
+  topic_distribution: TopicDistributionItem[];
   popular_questions: PopularQuestion[];
   satisfaction_trend: SatisfactionTrendPoint[];
   visitor_analytics: VisitorAnalytics;
@@ -242,6 +294,8 @@ export type DashboardData = {
 
 export type AdminOverview = {
   total_records: number;
+  question_count: number;
+  emoji_interaction_count: number;
   today_records: number;
   average_response_time_ms: number;
   low_confidence_count: number;

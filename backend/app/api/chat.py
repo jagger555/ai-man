@@ -46,6 +46,8 @@ def chat(request: ChatRequest):
             "record_id": answer.record_id,
             "record_status": answer.record_status,
             "latency_ms": answer.latency_ms,
+            "interaction_type": answer.interaction_type,
+            "emoji_value": answer.emoji_value,
         },
         media_type="application/json; charset=utf-8",
     )

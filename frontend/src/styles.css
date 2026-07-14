@@ -2601,6 +2601,80 @@ textarea {
   background: transparent;
 }
 
+.emoji-picker-wrap {
+  position: relative;
+}
+
+.emoji-action {
+  width: 52px;
+  min-width: 52px;
+  min-height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(185, 138, 69, 0.2);
+  border-radius: 50%;
+  color: #9b7633;
+  background: rgba(255, 247, 228, 0.96);
+  cursor: pointer;
+}
+
+.emoji-action:hover,
+.emoji-action[aria-expanded="true"] {
+  border-color: rgba(185, 138, 69, 0.42);
+  background: #fff3cf;
+  transform: translateY(-1px);
+}
+
+.emoji-picker {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  width: min(300px, calc(100vw - 40px));
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(185, 138, 69, 0.24);
+  border-radius: 16px;
+  padding: 13px;
+  background: rgba(255, 252, 245, 0.99);
+  box-shadow: 0 18px 42px rgba(18, 44, 44, 0.16);
+}
+
+.emoji-picker > span {
+  color: var(--guide-ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.emoji-picker > small {
+  color: #6a7c77;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.emoji-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.emoji-picker-grid button {
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid rgba(47, 118, 100, 0.1);
+  border-radius: 12px;
+  background: rgba(228, 241, 236, 0.56);
+  cursor: pointer;
+  font-size: 24px;
+}
+
+.emoji-picker-grid button:hover,
+.emoji-picker-grid button:focus-visible {
+  border-color: rgba(185, 138, 69, 0.42);
+  background: #fff3cf;
+  transform: translateY(-1px);
+}
+
 .live-placeholder {
   position: absolute;
   inset: 0;
@@ -5045,6 +5119,25 @@ textarea {
 .chart-panel > strong {
   color: var(--console-ink);
   font-size: 15px;
+}
+
+.chart-panel .recharts-wrapper {
+  font-family: inherit;
+}
+
+.chart-panel .recharts-cartesian-axis-tick-value,
+.chart-panel .recharts-legend-item-text {
+  fill: var(--console-muted);
+  color: var(--console-muted) !important;
+  font-size: 11px;
+}
+
+.interaction-chart-grid {
+  margin-top: 14px;
+}
+
+.positive-emoji-summary {
+  margin-top: 14px;
 }
 
 .bar-chart {

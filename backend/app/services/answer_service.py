@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app.core.config import get_chat_config, get_llm_config
 from app.services.chat_record_service import ChatRecord, ChatRecordService
+from app.services.emoji_interaction_service import identify_emoji_interaction
 from app.services.knowledge_service import KnowledgeBase
 from app.services.llm.llm_factory import get_guide_llm
 from app.services.llm.mock_llm import MockGuideLLM
@@ -32,6 +33,8 @@ class ChatAnswer:
     record_id: int | None
     record_status: str
     latency_ms: int
+    interaction_type: str
+    emoji_value: str
 
 
 class AnswerService:
@@ -50,6 +53,44 @@ class AnswerService:
         route_context: str = "未提供",
     ) -> ChatAnswer:
         start = time.perf_counter()
+        original_question = question.strip()
+        emoji_interaction = identify_emoji_interaction(original_question)
+        if emoji_interaction is not None:
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            record_id, record_status = self._persist_record(
+                session_id=session_id,
+                original_question=original_question,
+                cleaned_question=original_question,
+                answer=emoji_interaction.reply,
+                prompt="",
+                confidence=1.0,
+                reliable=True,
+                history_turns_used=0,
+                sources=[],
+                model_provider="fixed",
+                model_status="emoji_fixed_reply",
+                latency_ms=latency_ms,
+                interaction_type="emoji",
+                emoji_value=emoji_interaction.emoji_value,
+            )
+            return ChatAnswer(
+                session_id=session_id,
+                cleaned_question=original_question,
+                answer=emoji_interaction.reply,
+                sources=[],
+                confidence=1.0,
+                reliable=True,
+                prompt="",
+                history_turns_used=0,
+                model_provider="fixed",
+                model_status="emoji_fixed_reply",
+                record_id=record_id,
+                record_status=record_status,
+                latency_ms=latency_ms,
+                interaction_type="emoji",
+                emoji_value=emoji_interaction.emoji_value,
+            )
+
         cleaned_question = clean_question(question)
         prompt_context = PromptContext(
             current_location=current_location,
@@ -60,7 +101,7 @@ class AnswerService:
         chat_config = get_chat_config()
         recent_history = list(
             reversed(
-                self._chat_record_service.list_session_records(
+                self._chat_record_service.list_session_question_records(
                     session_id=session_id,
                     limit=chat_config.history_turns,
                 )
@@ -84,7 +125,7 @@ class AnswerService:
         latency_ms = int((time.perf_counter() - start) * 1000)
         record_id, record_status = self._persist_record(
             session_id=session_id,
-            original_question=question.strip(),
+            original_question=original_question,
             cleaned_question=cleaned_question,
             answer=answer,
             prompt=prompt,
@@ -95,6 +136,8 @@ class AnswerService:
             model_provider=model_provider,
             model_status=model_status,
             latency_ms=latency_ms,
+            interaction_type="question",
+            emoji_value="",
         )
 
         return ChatAnswer(
@@ -111,6 +154,8 @@ class AnswerService:
             record_id=record_id,
             record_status=record_status,
             latency_ms=latency_ms,
+            interaction_type="question",
+            emoji_value="",
         )
 
     def _generate_answer(self, prompt: str) -> tuple[str, str, str]:
@@ -146,6 +191,8 @@ class AnswerService:
         model_provider: str,
         model_status: str,
         latency_ms: int,
+        interaction_type: str,
+        emoji_value: str,
     ) -> tuple[int | None, str]:
         try:
             record_id = self._chat_record_service.save_record(
@@ -163,6 +210,8 @@ class AnswerService:
                     model_provider=model_provider,
                     model_status=model_status,
                     response_time_ms=latency_ms,
+                    interaction_type=interaction_type,
+                    emoji_value=emoji_value,
                 )
             )
             return record_id, "saved"

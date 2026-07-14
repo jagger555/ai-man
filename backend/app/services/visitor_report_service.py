@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import date, timedelta
 
 from app.core.config import DatabaseConfig, get_database_config
-from app.services.chat_record_service import (
-    FEEDBACK_SCHEMA_SQL,
-    SCHEMA_SQL,
-)
+from app.services.chat_record_service import ChatRecordService
 
 
 @dataclass(frozen=True)
@@ -29,54 +26,65 @@ FOCUS_RULES = (
     FocusRule("配套服务", ("餐饮", "厕所", "卫生间", "休息", "商店", "行李")),
 )
 
-POSITIVE_WORDS = ("清楚", "有用", "准确", "满意", "喜欢", "详细", "帮助")
-NEGATIVE_WORDS = ("不够", "没有", "不准", "错误", "缺少", "不清楚", "失望")
-
 
 class VisitorReportService:
     def __init__(self, config: DatabaseConfig | None = None):
         self._config = config or get_database_config()
 
-    def build_report(self, limit: int = 200) -> dict[str, object]:
-        rows = self._load_rows(limit=limit)
+    def build_report(self, limit: int = 200, days: int = 7) -> dict[str, object]:
+        days = days if days in {1, 7, 30} else 7
+        start_date = (date.today() - timedelta(days=days - 1)).isoformat()
+        rows = self._load_question_rows(limit=limit, start_date=start_date)
+        emoji_rows = self._load_emoji_rows(start_date=start_date)
         focus_points = _build_focus_points(rows)
-        sentiment_trend = _build_sentiment_trend(rows)
-        summary = _build_summary(rows, focus_points)
-        suggestions = _build_suggestions(summary, focus_points, sentiment_trend)
+        feedback_trend = _build_feedback_trend(rows, days)
+        summary = _build_summary(rows, focus_points, emoji_rows, days)
+        suggestions = _build_suggestions(summary, focus_points, feedback_trend)
 
         return {
             "summary": summary,
             "focus_points": focus_points,
-            "sentiment_trend": sentiment_trend,
+            "feedback_trend": feedback_trend,
+            "emoji_distribution": _build_emoji_distribution(emoji_rows),
+            "emoji_trend": _build_emoji_trend(emoji_rows, days),
+            # 保留旧字段供既有调用方平滑升级；数据仅来自服务反馈，不做情绪推断。
+            "sentiment_trend": [
+                {
+                    "date": item["date"],
+                    "positive_count": item["helpful_count"],
+                    "neutral_count": item["unrated_count"],
+                    "negative_count": item["unhelpful_count"],
+                    "total_count": item["question_count"],
+                    "positive_rate": item["helpful_rate"],
+                    "negative_rate": item["unhelpful_rate"],
+                }
+                for item in feedback_trend
+            ],
             "suggestions": suggestions,
         }
 
-    def _load_rows(self, limit: int) -> list[dict[str, object]]:
+    def _load_question_rows(
+        self, *, limit: int, start_date: str
+    ) -> list[dict[str, object]]:
         self._ensure_database()
         with sqlite3.connect(self._config.path) as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
-                SELECT
-                    records.id,
-                    records.session_id,
-                    records.original_question,
-                    records.cleaned_question,
-                    records.answer,
-                    records.confidence,
-                    records.reliable,
-                    records.source_count,
-                    records.created_at,
-                    feedback.rating,
-                    feedback.feedback_text,
+                SELECT records.id, records.session_id, records.original_question,
+                    records.cleaned_question, records.answer, records.confidence,
+                    records.reliable, records.source_count,
+                    DATETIME(records.created_at, 'localtime') AS created_at,
+                    feedback.rating, feedback.feedback_text,
                     feedback.updated_at AS feedback_updated_at
                 FROM chat_records AS records
-                LEFT JOIN chat_feedback AS feedback
-                  ON feedback.record_id = records.id
+                LEFT JOIN chat_feedback AS feedback ON feedback.record_id = records.id
+                WHERE records.interaction_type = 'question'
+                  AND DATE(records.created_at, 'localtime') >= ?
                 ORDER BY records.id DESC
                 LIMIT ?
                 """,
-                (limit,),
+                (start_date, limit),
             ).fetchall()
 
         return [
@@ -94,95 +102,96 @@ class VisitorReportService:
                 "feedback_text": row["feedback_text"] or "",
                 "feedback_updated_at": row["feedback_updated_at"],
                 "focus": _infer_focus(row["original_question"]),
-                "sentiment": _infer_sentiment(
-                    rating=row["rating"],
-                    feedback_text=row["feedback_text"] or "",
-                    reliable=bool(row["reliable"]),
-                    confidence=float(row["confidence"]),
-                    source_count=int(row["source_count"]),
-                ),
             }
             for row in rows
         ]
 
+    def _load_emoji_rows(self, *, start_date: str) -> list[dict[str, str]]:
+        with sqlite3.connect(self._config.path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT emoji_value, DATETIME(created_at, 'localtime') AS created_at
+                FROM chat_records
+                WHERE interaction_type = 'emoji'
+                  AND DATE(created_at, 'localtime') >= ?
+                ORDER BY id DESC
+                """,
+                (start_date,),
+            ).fetchall()
+        return [
+            {"emoji_value": row["emoji_value"] or "other", "created_at": row["created_at"]}
+            for row in rows
+        ]
+
     def _ensure_database(self) -> None:
-        database_path = self._config.path
-        Path(database_path).parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(database_path) as connection:
-            connection.execute(SCHEMA_SQL)
-            connection.execute(FEEDBACK_SCHEMA_SQL)
-            connection.commit()
+        ChatRecordService(self._config).count_records()
 
 
 def _build_summary(
     rows: list[dict[str, object]],
     focus_points: list[dict[str, object]],
+    emoji_rows: list[dict[str, str]],
+    days: int,
 ) -> dict[str, object]:
     total = len(rows)
-    feedback_count = sum(1 for row in rows if row["rating"])
-    positive_count = sum(1 for row in rows if row["sentiment"] == "positive")
-    negative_count = sum(1 for row in rows if row["sentiment"] == "negative")
-    neutral_count = total - positive_count - negative_count
-    low_confidence_count = sum(
-        1
-        for row in rows
-        if not bool(row["reliable"])
-        or float(row["confidence"]) < 0.5
-        or int(row["source_count"]) == 0
-    )
+    helpful_count = sum(1 for row in rows if row["rating"] == "helpful")
+    unhelpful_count = sum(1 for row in rows if row["rating"] == "unhelpful")
+    feedback_count = helpful_count + unhelpful_count
+    low_confidence_count = sum(1 for row in rows if _is_low_confidence(row))
     average_confidence = (
-        round(sum(float(row["confidence"]) for row in rows) / total, 2)
-        if total
-        else 0.0
+        round(sum(float(row["confidence"]) for row in rows) / total, 2) if total else 0.0
     )
-    top_focus = focus_points[0]["topic"] if focus_points else ""
+    top_focus = str(focus_points[0]["topic"]) if focus_points else ""
 
     return {
         "total_records": total,
+        "question_count": total,
+        "emoji_interaction_count": len(emoji_rows),
+        "period_days": days,
         "feedback_count": feedback_count,
-        "positive_count": positive_count,
-        "neutral_count": neutral_count,
-        "negative_count": negative_count,
-        "positive_rate": round(positive_count / total, 2) if total else 0.0,
-        "negative_rate": round(negative_count / total, 2) if total else 0.0,
+        "helpful_count": helpful_count,
+        "unhelpful_count": unhelpful_count,
+        "unrated_count": total - feedback_count,
+        "helpful_rate": _safe_rate(helpful_count, feedback_count),
+        "unhelpful_rate": _safe_rate(unhelpful_count, feedback_count),
         "low_confidence_count": low_confidence_count,
-        "low_confidence_rate": round(low_confidence_count / total, 2) if total else 0.0,
+        "low_confidence_rate": _safe_rate(low_confidence_count, total),
         "average_confidence": average_confidence,
         "top_focus": top_focus,
+        # 兼容旧客户端，含义为服务反馈而非游客情绪。
+        "positive_count": helpful_count,
+        "neutral_count": total - feedback_count,
+        "negative_count": unhelpful_count,
+        "positive_rate": _safe_rate(helpful_count, feedback_count),
+        "negative_rate": _safe_rate(unhelpful_count, feedback_count),
     }
 
 
 def _build_focus_points(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     buckets: dict[str, dict[str, object]] = {}
-
     for row in rows:
         focus = str(row["focus"])
-        if focus not in buckets:
-            buckets[focus] = {
+        bucket = buckets.setdefault(
+            focus,
+            {
                 "topic": focus,
                 "count": 0,
-                "positive_count": 0,
-                "negative_count": 0,
+                "helpful_count": 0,
+                "unhelpful_count": 0,
                 "low_confidence_count": 0,
                 "confidence_total": 0.0,
                 "sample_questions": [],
                 "keywords": set(),
-            }
-
-        bucket = buckets[focus]
-        bucket["count"] = int(bucket["count"]) + 1
-        bucket["confidence_total"] = float(bucket["confidence_total"]) + float(
-            row["confidence"]
+            },
         )
-        if row["sentiment"] == "positive":
-            bucket["positive_count"] = int(bucket["positive_count"]) + 1
-        if row["sentiment"] == "negative":
-            bucket["negative_count"] = int(bucket["negative_count"]) + 1
-        if (
-            not bool(row["reliable"])
-            or float(row["confidence"]) < 0.5
-            or int(row["source_count"]) == 0
-        ):
+        bucket["count"] = int(bucket["count"]) + 1
+        bucket["confidence_total"] = float(bucket["confidence_total"]) + float(row["confidence"])
+        if row["rating"] == "helpful":
+            bucket["helpful_count"] = int(bucket["helpful_count"]) + 1
+        if row["rating"] == "unhelpful":
+            bucket["unhelpful_count"] = int(bucket["unhelpful_count"]) + 1
+        if _is_low_confidence(row):
             bucket["low_confidence_count"] = int(bucket["low_confidence_count"]) + 1
         samples = bucket["sample_questions"]
         if isinstance(samples, list) and len(samples) < 3:
@@ -191,137 +200,144 @@ def _build_focus_points(rows: list[dict[str, object]]) -> list[dict[str, object]
         if isinstance(keywords, set):
             keywords.update(_extract_keywords(str(row["original_question"])))
 
-    focus_points: list[dict[str, object]] = []
+    result: list[dict[str, object]] = []
     for bucket in buckets.values():
         count = int(bucket["count"])
-        keyword_values = sorted(
-            bucket["keywords"],
-            key=lambda item: (-len(item), item),
-        )
-        focus_points.append(
+        helpful_count = int(bucket["helpful_count"])
+        unhelpful_count = int(bucket["unhelpful_count"])
+        result.append(
             {
                 "topic": bucket["topic"],
                 "count": count,
-                "share": round(count / len(rows), 2) if rows else 0.0,
-                "positive_count": bucket["positive_count"],
-                "negative_count": bucket["negative_count"],
+                "share": _safe_rate(count, len(rows)),
+                "helpful_count": helpful_count,
+                "unhelpful_count": unhelpful_count,
+                "positive_count": helpful_count,
+                "negative_count": unhelpful_count,
                 "low_confidence_count": bucket["low_confidence_count"],
-                "average_confidence": round(
-                    float(bucket["confidence_total"]) / count,
-                    2,
-                )
-                if count
-                else 0.0,
+                "average_confidence": round(float(bucket["confidence_total"]) / count, 2),
                 "sample_questions": bucket["sample_questions"],
-                "keywords": keyword_values[:5],
+                "keywords": sorted(bucket["keywords"], key=lambda item: (-len(item), item))[:5],
             }
         )
-
-    return sorted(
-        focus_points,
-        key=lambda item: (
-            -int(item["count"]),
-            -int(item["negative_count"]),
-            str(item["topic"]),
-        ),
-    )
+    return sorted(result, key=lambda item: (-int(item["count"]), str(item["topic"])))
 
 
-def _build_sentiment_trend(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+def _build_feedback_trend(
+    rows: list[dict[str, object]], days: int
+) -> list[dict[str, object]]:
+    today = date.today()
+    trend_dates = [today - timedelta(days=offset) for offset in range(days - 1, -1, -1)]
     buckets: dict[str, dict[str, int]] = defaultdict(
-        lambda: {
-            "positive_count": 0,
-            "neutral_count": 0,
-            "negative_count": 0,
-            "total_count": 0,
-        }
+        lambda: {"question_count": 0, "helpful_count": 0, "unhelpful_count": 0}
     )
-
     for row in rows:
         day = str(row["created_at"])[:10]
-        sentiment = str(row["sentiment"])
-        buckets[day]["total_count"] += 1
-        buckets[day][f"{sentiment}_count"] += 1
+        buckets[day]["question_count"] += 1
+        if row["rating"] in {"helpful", "unhelpful"}:
+            buckets[day][f"{row['rating']}_count"] += 1
 
+    result = []
+    for day in trend_dates:
+        values = buckets[day.isoformat()]
+        feedback_count = values["helpful_count"] + values["unhelpful_count"]
+        result.append(
+            {
+                "date": day.isoformat(),
+                **values,
+                "unrated_count": values["question_count"] - feedback_count,
+                "helpful_rate": _safe_rate(values["helpful_count"], feedback_count),
+                "unhelpful_rate": _safe_rate(values["unhelpful_count"], feedback_count),
+            }
+        )
+    return result
+
+
+def _build_emoji_distribution(rows: list[dict[str, str]]) -> list[dict[str, object]]:
+    counts = Counter(row["emoji_value"] for row in rows)
     return [
-        {
-            "date": day,
-            **values,
-            "positive_rate": round(values["positive_count"] / values["total_count"], 2)
-            if values["total_count"]
-            else 0.0,
-            "negative_rate": round(values["negative_count"] / values["total_count"], 2)
-            if values["total_count"]
-            else 0.0,
-        }
-        for day, values in sorted(buckets.items())
+        {"emoji": emoji, "count": count, "share": _safe_rate(count, len(rows))}
+        for emoji, count in counts.most_common()
+    ]
+
+
+def _build_emoji_trend(rows: list[dict[str, str]], days: int) -> list[dict[str, object]]:
+    counts = Counter(str(row["created_at"])[:10] for row in rows)
+    today = date.today()
+    return [
+        {"date": day.isoformat(), "count": counts.get(day.isoformat(), 0)}
+        for day in [today - timedelta(days=offset) for offset in range(days - 1, -1, -1)]
     ]
 
 
 def _build_suggestions(
     summary: dict[str, object],
     focus_points: list[dict[str, object]],
-    sentiment_trend: list[dict[str, object]],
+    feedback_trend: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     suggestions: list[dict[str, object]] = []
-
-    if summary["low_confidence_rate"] >= 0.3:
+    if float(summary["low_confidence_rate"]) >= 0.3:
         suggestions.append(
             {
                 "priority": "high",
                 "title": "优先补齐低命中知识",
                 "reason": f"近期待复核问题占比 {int(float(summary['low_confidence_rate']) * 100)}%。",
-                "action": "从低置信度问题池挑选高频问题，补充讲解词、FAQ 或文史资料。",
+                "action": "从低置信问题池选择高频问题，补充讲解词、FAQ 或文史资料。",
                 "related_focus": summary["top_focus"],
             }
         )
-
     for focus in focus_points[:3]:
-        count = int(focus["count"])
-        negative_count = int(focus["negative_count"])
+        unhelpful_count = int(focus["unhelpful_count"])
         low_confidence_count = int(focus["low_confidence_count"])
-        if negative_count == 0 and low_confidence_count == 0:
+        if unhelpful_count == 0 and low_confidence_count == 0:
             continue
-
-        priority = "high" if negative_count >= 2 or low_confidence_count >= 2 else "medium"
         suggestions.append(
             {
-                "priority": priority,
+                "priority": "high" if unhelpful_count >= 2 or low_confidence_count >= 2 else "medium",
                 "title": f"优化{focus['topic']}相关回答",
                 "reason": (
-                    f"该关注点出现 {count} 次，其中负向 {negative_count} 次、"
-                    f"低置信度 {low_confidence_count} 次。"
+                    f"该主题收到无帮助反馈 {unhelpful_count} 次，"
+                    f"低置信问题 {low_confidence_count} 次。"
                 ),
-                "action": "补充游客最常问的具体事实、服务规则和现场导览表达。",
+                "action": "补充游客常问事实、服务规则和现场导览表达，并重新测试典型问题。",
                 "related_focus": focus["topic"],
             }
         )
-
-    if sentiment_trend:
-        latest = sentiment_trend[-1]
-        if float(latest["negative_rate"]) >= 0.4:
+    if feedback_trend:
+        latest = feedback_trend[-1]
+        if float(latest["unhelpful_rate"]) >= 0.4:
             suggestions.append(
                 {
                     "priority": "medium",
-                    "title": "关注最近一天负向反馈",
-                    "reason": f"{latest['date']} 负向占比达到 {int(float(latest['negative_rate']) * 100)}%。",
-                    "action": "复盘当天问题样本，检查是否存在知识缺口或表达不够清晰。",
+                    "title": "复核最近一天无帮助反馈",
+                    "reason": f"{latest['date']} 无帮助反馈占比达到 {int(float(latest['unhelpful_rate']) * 100)}%。",
+                    "action": "复盘对应问答，检查知识缺口和回答表达。",
                     "related_focus": summary["top_focus"],
                 }
             )
-
     if not suggestions:
         suggestions.append(
             {
                 "priority": "low",
                 "title": "维持当前知识库巡检节奏",
-                "reason": "近期反馈和置信度整体稳定，暂未发现集中风险点。",
-                "action": "每周复核新增问题和未反馈高频问题，保持知识库持续更新。",
+                "reason": "近期服务反馈和回答置信度整体稳定。",
+                "action": "每周复核新增问题和未反馈高频问题，持续更新知识库。",
                 "related_focus": summary["top_focus"],
             }
         )
-
     return suggestions[:5]
+
+
+def _is_low_confidence(row: dict[str, object]) -> bool:
+    return (
+        not bool(row["reliable"])
+        or float(row["confidence"]) < 0.5
+        or int(row["source_count"]) == 0
+    )
+
+
+def _safe_rate(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 2) if denominator else 0.0
 
 
 def _infer_focus(question: str) -> str:
@@ -329,27 +345,6 @@ def _infer_focus(question: str) -> str:
         if any(keyword in question for keyword in rule.keywords):
             return rule.name
     return "其他关注"
-
-
-def _infer_sentiment(
-    *,
-    rating: str | None,
-    feedback_text: str,
-    reliable: bool,
-    confidence: float,
-    source_count: int,
-) -> str:
-    if rating == "helpful":
-        return "positive"
-    if rating == "unhelpful":
-        return "negative"
-    if any(word in feedback_text for word in POSITIVE_WORDS):
-        return "positive"
-    if any(word in feedback_text for word in NEGATIVE_WORDS):
-        return "negative"
-    if not reliable or confidence < 0.5 or source_count == 0:
-        return "negative"
-    return "neutral"
 
 
 def _extract_keywords(text: str) -> list[str]:

@@ -10,6 +10,7 @@ import {
   Mic,
   RefreshCw,
   Route,
+  Smile,
   Users,
 } from "lucide-react";
 import type {
@@ -53,6 +54,8 @@ const sampleQuestions = [
   "附近哪里有厕所？",
   "有什么餐饮推荐？",
 ];
+
+const positiveEmojis = ["😊", "😄", "👍", "❤️", "🙏", "🤩", "👏", "🌸"];
 
 const scenicTags = [
   "国家 AAAAA 级景区",
@@ -286,6 +289,46 @@ function GuideQuestionPanel({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleListening: () => void;
 }) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isEmojiPickerOpen) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!emojiPickerRef.current?.contains(event.target as Node)) {
+        setIsEmojiPickerOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsEmojiPickerOpen(false);
+        textareaRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isEmojiPickerOpen]);
+
+  function insertEmoji(emoji: string) {
+    const textarea = textareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? question.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const nextQuestion = `${question.slice(0, selectionStart)}${emoji}${question.slice(selectionEnd)}`;
+    onQuestionChange(nextQuestion);
+    requestAnimationFrame(() => {
+      const caret = selectionStart + emoji.length;
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
+  }
+
   return (
     <form onSubmit={onSubmit} className="guide-question-panel">
       <div className="question-panel-head">
@@ -299,10 +342,12 @@ function GuideQuestionPanel({
         输入你想了解的灵山胜境问题
       </label>
       <textarea
+        ref={textareaRef}
         id="question"
         value={question}
         onChange={(event) => onQuestionChange(event.target.value)}
         rows={4}
+        maxLength={500}
         placeholder="例如：九龙灌浴几点开始？"
       />
       <div className="quick-questions">
@@ -321,6 +366,42 @@ function GuideQuestionPanel({
         >
           <Mic size={20} aria-hidden="true" />
         </button>
+        <div className="emoji-picker-wrap" ref={emojiPickerRef}>
+          <button
+            className="emoji-action"
+            type="button"
+            onClick={() => setIsEmojiPickerOpen((isOpen) => !isOpen)}
+            title="添加积极表情"
+            aria-label="添加积极表情"
+            aria-expanded={isEmojiPickerOpen}
+            aria-controls="positive-emoji-picker"
+          >
+            <Smile size={20} aria-hidden="true" />
+          </button>
+          {isEmojiPickerOpen ? (
+            <div
+              id="positive-emoji-picker"
+              className="emoji-picker"
+              role="dialog"
+              aria-label="积极表情选择"
+            >
+              <span>选择积极表情</span>
+              <div className="emoji-picker-grid">
+                {positiveEmojis.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => insertEmoji(emoji)}
+                    aria-label={`插入表情 ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+              <small>纯表情可直接发送，也可以与文字一起提问。</small>
+            </div>
+          ) : null}
+        </div>
         <button className="primary-action" type="submit" disabled={isLoading}>
           {isLoading ? "数字导游正在整理讲解内容..." : "开始讲解"}
         </button>
@@ -926,14 +1007,23 @@ export function App() {
     }
   }
 
-  async function loadAdminData() {
+  function getAdminRangeDays(range: "today" | "7d" | "30d") {
+    return range === "today" ? 1 : range === "30d" ? 30 : 7;
+  }
+
+  function changeAdminTimeRange(range: "today" | "7d" | "30d") {
+    setAdminTimeRange(range);
+    void Promise.all([loadDashboard(range), loadVisitorReport(range)]);
+  }
+
+  async function loadAdminData(range = adminTimeRange) {
     await Promise.all([
       loadRecords(),
       loadOverview(),
-      loadDashboard(),
+      loadDashboard(range),
       loadLowConfidenceRecords(),
       loadFeedbackRecords(),
-      loadVisitorReport(),
+      loadVisitorReport(range),
     ]);
   }
 
@@ -975,12 +1065,14 @@ export function App() {
     }
   }
 
-  async function loadDashboard() {
+  async function loadDashboard(range = adminTimeRange) {
     setDashboardLoading(true);
     setDashboardError("");
 
     try {
-      const result = await fetch("/api/admin/dashboard?limit=8");
+      const result = await fetch(
+        `/api/admin/dashboard?limit=8&days=${getAdminRangeDays(range)}`,
+      );
       if (!result.ok) {
         throw new Error(`数据大屏接口返回 ${result.status}`);
       }
@@ -1039,20 +1131,22 @@ export function App() {
     }
   }
 
-  async function loadVisitorReport() {
+  async function loadVisitorReport(range = adminTimeRange) {
     setVisitorReportLoading(true);
     setVisitorReportError("");
 
     try {
-      const result = await fetch("/api/admin/visitor-report?limit=200");
+      const result = await fetch(
+        `/api/admin/visitor-report?limit=200&days=${getAdminRangeDays(range)}`,
+      );
       if (!result.ok) {
-        throw new Error(`感受度报告接口返回 ${result.status}`);
+        throw new Error(`游客互动报告接口返回 ${result.status}`);
       }
 
       setVisitorReport((await result.json()) as VisitorReport);
     } catch (caught) {
       setVisitorReportError(
-        caught instanceof Error ? (caught as Error).message : "读取游客感受度报告失败",
+        caught instanceof Error ? (caught as Error).message : "读取游客互动报告失败",
       );
     } finally {
       setVisitorReportLoading(false);
@@ -1293,7 +1387,9 @@ export function App() {
                         key={range.id}
                         type="button"
                         className={adminTimeRange === range.id ? "active" : ""}
-                        onClick={() => setAdminTimeRange(range.id as "today" | "7d" | "30d")}
+                        onClick={() =>
+                          changeAdminTimeRange(range.id as "today" | "7d" | "30d")
+                        }
                         aria-pressed={adminTimeRange === range.id}
                       >
                         {range.label}

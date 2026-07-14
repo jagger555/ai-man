@@ -3,8 +3,24 @@ import type {
   DashboardData,
   LowConfidenceRecord,
   PopularQuestion,
-  VisitorAnalyticsItem,
 } from "./types";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 type DashboardPanelProps = {
   dashboard: DashboardData | null;
@@ -96,6 +112,20 @@ function getBarHeight(value: number, maxValue: number): string {
   return `${Math.max(8, Math.round((value / maxValue) * 100))}%`;
 }
 
+const chartColors = ["#0e4a5a", "#2f7664", "#b98a45", "#e4c37a", "#6f8f86", "#a9664f"];
+const tooltipStyle = {
+  border: "1px solid rgba(14, 74, 90, 0.14)",
+  borderRadius: 10,
+  background: "rgba(255, 252, 245, 0.98)",
+  boxShadow: "0 12px 28px rgba(18, 44, 44, 0.12)",
+};
+
+function getEmojiLabel(value: string): string {
+  if (value === "mixed") return "组合 Emoji";
+  if (value === "other") return "其他 Emoji";
+  return value;
+}
+
 function getBarWidth(value: number, maxValue: number): string {
   if (maxValue <= 0) {
     return "0%";
@@ -171,13 +201,16 @@ export function DashboardPanel({
   onReviewLowConfidence,
 }: DashboardPanelProps) {
   const summary = dashboard?.summary;
-  const weeklyTrend = dashboard?.weekly_service_trend ?? [];
+  const weeklyTrend = dashboard?.service_trend ?? dashboard?.weekly_service_trend ?? [];
   const popularQuestions = dashboard?.popular_questions ?? [];
   const satisfactionTrend = dashboard?.satisfaction_trend ?? [];
+  const emojiDistribution = dashboard?.emoji_distribution ?? [];
+  const emojiTrend = dashboard?.emoji_trend ?? [];
+  const topicDistribution = dashboard?.topic_distribution ?? [];
   const visitorAnalytics = dashboard?.visitor_analytics ?? {};
   const ageGroups = visitorAnalytics.age_groups ?? [];
+  const genderGroups = visitorAnalytics.gender_distribution ?? [];
   const topAttractions = visitorAnalytics.top_attractions ?? [];
-  const serviceDemandDistribution: VisitorAnalyticsItem[] = [];
   const hasVisitorAnalytics =
     typeof visitorAnalytics.total_visits === "number" &&
     visitorAnalytics.total_visits > 0;
@@ -188,15 +221,7 @@ export function DashboardPanel({
       item.low_confidence_count > 0 ||
       item.average_response_time_ms > 0,
   );
-  const maxServiceCount = Math.max(0, ...weeklyTrend.map((item) => item.service_count));
-  const maxLowConfidenceCount = Math.max(
-    0,
-    ...weeklyTrend.map((item) => item.low_confidence_count),
-  );
-  const maxResponseTime = Math.max(
-    0,
-    ...weeklyTrend.map((item) => item.average_response_time_ms),
-  );
+  const periodLabel = summary?.period_days === 1 ? "今日" : `近 ${summary?.period_days ?? 7} 天`;
   const realModelCount = overview?.real_model_count ?? 0;
   const mockModelCount = overview?.mock_model_count ?? 0;
   const fallbackCount = overview?.fallback_count ?? 0;
@@ -204,39 +229,39 @@ export function DashboardPanel({
 
   const kpiCards = [
     {
-      label: "今日问答数",
-      value: formatNumber(summary?.today_records),
-      trend: "较昨日 +12%",
-      helper: "按 created_at 当日统计的游客提问量。",
+      label: `${periodLabel}问答量`,
+      value: formatNumber(summary?.period_records),
+      trend: "实时筛选",
+      helper: "只统计正常问答，不包含 Emoji 互动。",
       tone: "normal" as Tone,
     },
     {
       label: "累计问答数",
-      value: formatNumber(summary?.total_records),
+      value: formatNumber(summary?.question_count),
       trend: "历史累计",
-      helper: "系统已自动落库的全部问答记录。",
+      helper: "系统已自动落库的正常问答记录。",
       tone: "normal" as Tone,
+    },
+    {
+      label: "积极 Emoji 互动",
+      value: formatNumber(summary?.emoji_interaction_count),
+      trend: "固定回复",
+      helper: "仅展示积极互动，不参与问答质检。",
+      tone: "success" as Tone,
     },
     {
       label: "平均响应时间",
       value: formatMs(summary?.average_response_time_ms),
-      trend: "较昨日 -8%",
-      helper: "当前记录的平均接口响应耗时。",
+      trend: periodLabel,
+      helper: "仅统计当前范围内的正常问答耗时。",
       tone: "success" as Tone,
     },
     {
       label: "低置信问题数",
       value: formatNumber(summary?.low_confidence_count),
       trend: "需复核",
-      helper: "confidence < 50% 或 reliable = false。",
+      helper: "仅统计当前范围内需要复核的正常问题。",
       tone: "warning" as Tone,
-    },
-    {
-      label: "Fallback 次数",
-      value: formatNumber(fallbackCount),
-      trend: modelTotal > 0 ? `${formatPercent(fallbackCount / modelTotal)} 占比` : "暂无调用",
-      helper: "模型异常或本地 Mock 回复次数。",
-      tone: fallbackCount > 0 ? "warning" as Tone : "success" as Tone,
     },
     {
       label: "有帮助率",
@@ -394,69 +419,132 @@ export function DashboardPanel({
       <section className="dashboard-card operations-card trend-card">
         <div className="dashboard-card-head operations-card-head">
           <div>
-            <strong>趋势分析</strong>
-            <p>7 日问答量、低置信问题和平均响应时间。</p>
+            <strong>核心运营趋势</strong>
+            <p>真实问答量、低置信问题、响应耗时和服务反馈随筛选范围同步更新。</p>
           </div>
-          <span>近 7 天</span>
+          <span>{periodLabel}</span>
         </div>
         {hasTrendData ? (
           <div className="trend-dashboard-grid">
             <div className="chart-panel">
-              <strong>问答量趋势</strong>
-              <div className="bar-chart" aria-label="7 日问答量趋势">
-                {weeklyTrend.map((item) => (
-                  <div key={`service-${item.date}`} className="bar-column">
-                    <span
-                      className="service-bar"
-                      style={{ height: getBarHeight(item.service_count, maxServiceCount) }}
-                    />
-                    <small>{formatDateLabel(item.date)}</small>
-                    <em>{item.service_count}</em>
-                  </div>
-                ))}
-              </div>
+              <strong>问答量与低置信问题</strong>
+              <ResponsiveContainer width="100%" height={210}>
+                <BarChart data={weeklyTrend} accessibilityLayer>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
+                  <XAxis dataKey="date" tickFormatter={formatDateLabel} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} width={32} />
+                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(value) => formatDateLabel(String(value ?? ""))} />
+                  <Legend />
+                  <Bar dataKey="service_count" name="问答量" fill="#0e4a5a" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="low_confidence_count" name="低置信" fill="#e4c37a" radius={[5, 5, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
             <div className="chart-panel">
-              <strong>低置信问题趋势</strong>
-              <div className="bar-chart risk-chart" aria-label="7 日低置信问题趋势">
-                {weeklyTrend.map((item) => (
-                  <div key={`risk-${item.date}`} className="bar-column">
-                    <span
-                      className="risk-bar"
-                      style={{
-                        height: getBarHeight(
-                          item.low_confidence_count,
-                          maxLowConfidenceCount,
-                        ),
-                      }}
-                    />
-                    <small>{formatDateLabel(item.date)}</small>
-                    <em>{item.low_confidence_count}</em>
-                  </div>
-                ))}
-              </div>
+              <strong>平均响应时间</strong>
+              <ResponsiveContainer width="100%" height={210}>
+                <AreaChart data={weeklyTrend} accessibilityLayer>
+                  <defs>
+                    <linearGradient id="latencyFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#2f7664" stopOpacity={0.34} />
+                      <stop offset="95%" stopColor="#2f7664" stopOpacity={0.03} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
+                  <XAxis dataKey="date" tickFormatter={formatDateLabel} interval="preserveStartEnd" />
+                  <YAxis width={44} unit="ms" />
+                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(value) => formatDateLabel(String(value ?? ""))} formatter={(value) => [`${value} ms`, "平均响应"]} />
+                  <Area type="monotone" dataKey="average_response_time_ms" name="平均响应" stroke="#2f7664" fill="url(#latencyFill)" strokeWidth={3} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <div className="chart-panel latency-panel">
-              <strong>平均响应时间趋势</strong>
-              <div className="latency-line-chart" aria-label="7 日平均响应时间趋势">
-                {weeklyTrend.map((item) => (
-                  <div key={`latency-${item.date}`} className="latency-point-wrap">
-                    <span
-                      className="latency-point"
-                      style={{
-                        bottom: getBarHeight(item.average_response_time_ms, maxResponseTime),
-                      }}
-                    />
-                    <small>{formatDateLabel(item.date)}</small>
-                    <em>{formatMs(item.average_response_time_ms)}</em>
-                  </div>
-                ))}
-              </div>
+            <div className="chart-panel">
+              <strong>有帮助 / 无帮助反馈</strong>
+              <ResponsiveContainer width="100%" height={210}>
+                <LineChart data={satisfactionTrend} accessibilityLayer>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
+                  <XAxis dataKey="date" tickFormatter={formatDateLabel} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} width={32} />
+                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(value) => formatDateLabel(String(value ?? ""))} />
+                  <Legend />
+                  <Line type="monotone" dataKey="helpful_count" name="有帮助" stroke="#2f7664" strokeWidth={3} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="unhelpful_count" name="无帮助" stroke="#a9664f" strokeWidth={3} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
         ) : (
           <EmptyState />
         )}
+      </section>
+
+      <section className="dashboard-card operations-card interaction-card">
+        <div className="dashboard-card-head operations-card-head">
+          <div>
+            <strong>积极互动与咨询主题</strong>
+            <p>Emoji 仅代表积极互动；咨询主题来自真实问答，不参与情绪分类。</p>
+          </div>
+          <span>{periodLabel}</span>
+        </div>
+        <div className="trend-dashboard-grid interaction-chart-grid">
+          <div className="chart-panel">
+            <strong>积极 Emoji 分布</strong>
+            {emojiDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart accessibilityLayer>
+                  <Pie
+                    data={emojiDistribution.map((item) => ({ ...item, label: getEmojiLabel(item.emoji) }))}
+                    dataKey="count"
+                    nameKey="label"
+                    innerRadius={52}
+                    outerRadius={82}
+                    paddingAngle={3}
+                  >
+                    {emojiDistribution.map((item, index) => (
+                      <Cell key={`${item.emoji}-${index}`} fill={chartColors[index % chartColors.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState label="当前范围暂无 Emoji 互动" />
+            )}
+          </div>
+          <div className="chart-panel">
+            <strong>积极 Emoji 每日互动</strong>
+            {emojiTrend.some((item) => item.count > 0) ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={emojiTrend} accessibilityLayer>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
+                  <XAxis dataKey="date" tickFormatter={formatDateLabel} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} width={32} />
+                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(value) => formatDateLabel(String(value ?? ""))} />
+                  <Bar dataKey="count" name="Emoji 互动" fill="#b98a45" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState label="当前范围暂无 Emoji 互动" />
+            )}
+          </div>
+          <div className="chart-panel">
+            <strong>咨询主题排行</strong>
+            {topicDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={topicDistribution} layout="vertical" accessibilityLayer margin={{ left: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
+                  <XAxis type="number" allowDecimals={false} />
+                  <YAxis type="category" dataKey="topic" width={44} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="count" name="咨询量" fill="#0e4a5a" radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState label="当前范围暂无问答主题" />
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="dashboard-card operations-card qa-ranking-card">
@@ -580,10 +668,10 @@ export function DashboardPanel({
       <section className="dashboard-card operations-card visitor-analytics-card">
         <div className="dashboard-card-head operations-card-head">
           <div>
-            <strong>游客行为数据</strong>
-            <p>聚焦灵山胜境真实运营场景下的景点和服务关注度。</p>
+            <strong>示范游客画像</strong>
+            <p>来源于公开 Excel 示例，仅用于展示画像能力，不参与核心运营 KPI。</p>
           </div>
-          <span>{hasVisitorAnalytics ? visitorAnalytics.sheet_name || "游客行为" : "暂无数据"}</span>
+          <span>{hasVisitorAnalytics ? `示范数据 · ${visitorAnalytics.sheet_name || "游客行为"}` : "暂无示范数据"}</span>
         </div>
         <div className="analytics-summary-grid operations-analytics-grid">
           <article>
@@ -631,9 +719,9 @@ export function DashboardPanel({
             )}
           </div>
           <div className="analytics-list operations-list">
-            <strong>服务需求分布</strong>
-            {serviceDemandDistribution.length > 0 ? (
-              serviceDemandDistribution.map((item) => (
+            <strong>性别分布</strong>
+            {genderGroups.length > 0 ? (
+              genderGroups.map((item) => (
                 <div key={item.label} className="analytics-row">
                   <span>{item.label}</span>
                   <em>{formatPercent(item.share)}</em>

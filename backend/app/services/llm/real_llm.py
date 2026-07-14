@@ -11,7 +11,7 @@ class RealGuideLLM(BaseGuideLLM):
         self._config = config
         self.provider = config.provider
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, system_prompt: str | None = None) -> str:
         if not self._config.api_key or not self._config.base_url:
             raise RuntimeError("LLM_API_KEY or LLM_BASE_URL is not configured.")
 
@@ -20,7 +20,7 @@ class RealGuideLLM(BaseGuideLLM):
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是一个专业、准确、自然的景区AI数字人导游。",
+                    "content": system_prompt or "你是一个专业、准确、自然的景区AI数字人导游。",
                 },
                 {
                     "role": "user",

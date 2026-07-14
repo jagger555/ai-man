@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.digital_human_service import resolve_livetalking_root
 
 
 def test_digital_human_config_uses_defaults(monkeypatch):
@@ -23,6 +26,22 @@ def test_digital_human_config_uses_defaults(monkeypatch):
         "ref_audio": "",
         "ref_text": "",
     }
+
+
+def test_digital_human_config_treats_blank_base_url_as_default(monkeypatch):
+    monkeypatch.setenv("DIGITAL_HUMAN_BASE_URL", "   ")
+    monkeypatch.delenv("DIGITAL_HUMAN_AVATAR", raising=False)
+    monkeypatch.delenv("DIGITAL_HUMAN_VOICE", raising=False)
+    monkeypatch.delenv("DIGITAL_HUMAN_REF_AUDIO", raising=False)
+    monkeypatch.delenv("DIGITAL_HUMAN_REF_TEXT", raising=False)
+    monkeypatch.setenv("DIGITAL_HUMAN_STATE_PATH", "__missing_state__.json")
+
+    response = TestClient(app).get("/api/digital-human/config")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is True
+    assert body["base_url"] == "http://127.0.0.1:8010"
 
 
 def test_digital_human_config_reads_environment(monkeypatch):
@@ -83,3 +102,12 @@ def test_avatar_list_and_select_updates_runtime_config(monkeypatch, tmp_path):
     config_response = client.get("/api/digital-human/config")
     assert config_response.status_code == 200
     assert config_response.json()["avatar"] == "626"
+
+
+def test_livetalking_root_defaults_to_sibling_directory(monkeypatch):
+    monkeypatch.delenv("LIVETALKING_ROOT", raising=False)
+
+    root = resolve_livetalking_root()
+
+    expected = Path(__file__).resolve().parents[2].parent / "LiveTalking"
+    assert root == expected

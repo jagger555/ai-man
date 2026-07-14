@@ -42,6 +42,30 @@ def test_chat_endpoint_answers_from_default_knowledge_base(monkeypatch):
     assert body["latency_ms"] >= 0
 
 
+def test_chat_endpoint_includes_optional_visitor_context_in_prompt(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "session_id": "context-session",
+            "question": "带老人怎么游览灵山大佛？",
+            "current_location": "游客中心",
+            "visitor_type": "老人游客",
+            "available_time": "半天",
+        },
+    )
+
+    assert response.status_code == 200
+    prompt = response.json()["prompt"]
+    assert "用户当前位置：\n游客中心" in prompt
+    assert "用户画像：\n老人游客" in prompt
+    assert "可用游玩时间：\n半天" in prompt
+    assert "地图/路线检索结果：\n未提供" in prompt
+
+
 def test_chat_endpoint_returns_low_confidence_for_unrelated_question(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
@@ -65,6 +89,29 @@ def test_chat_endpoint_returns_low_confidence_for_unrelated_question(monkeypatch
     assert body["model_status"] == "low_confidence_no_llm"
     assert body["record_status"] == "saved"
     assert body["record_id"] >= 1
+
+
+def test_chat_endpoint_uses_route_context_even_when_knowledge_retrieval_is_unreliable(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "session_id": "route-context-session",
+            "question": "帮我走过去",
+            "route_context": "当前位置：游客中心；目的地：灵山梵宫；路线：沿主路向北步行约8分钟。",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["model_provider"] == "mock"
+    assert body["model_status"] == "mock_response"
+    assert "地图/路线检索结果" in body["prompt"]
+    assert "沿主路向北步行约8分钟" in body["prompt"]
+    assert "沿主路向北步行约8分钟" in body["answer"]
 
 
 def test_unreliable_retrieval_skips_real_llm_generation(monkeypatch, tmp_path):
@@ -109,6 +156,8 @@ def test_chat_endpoint_uses_real_llm_when_configured(monkeypatch):
     def fake_post(url, *, json, headers, timeout):
         assert url == "https://example.com/v1/chat/completions"
         assert json["model"] == "test-model"
+        assert "灵山胜境 AI 数字人导游" in json["messages"][0]["content"]
+        assert "用户问题：\n灵山大佛有多高？" in json["messages"][1]["content"]
         assert headers["Authorization"] == "Bearer test-key"
         assert timeout == 20
 

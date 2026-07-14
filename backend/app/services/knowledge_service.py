@@ -616,11 +616,19 @@ def load_chunks_from_public_package(package_path: str | Path) -> list[KnowledgeC
     return chunks
 
 
-def load_chunks_from_markdown_file(markdown_path: str | Path) -> list[KnowledgeChunk]:
+def load_chunks_from_markdown_file(
+    markdown_path: str | Path,
+    *,
+    include_sliding_windows: bool = True,
+) -> list[KnowledgeChunk]:
     path = Path(markdown_path)
     if not path.exists():
         return []
-    return _build_chunks(source=str(path), text=path.read_text(encoding="utf-8"))
+    return _build_chunks(
+        source=str(path),
+        text=path.read_text(encoding="utf-8"),
+        include_sliding_windows=include_sliding_windows,
+    )
 
 
 def build_chunks_from_documents(
@@ -660,6 +668,7 @@ def _build_chunks(
     document_id: int | None = None,
     title: str | None = None,
     category: str | None = None,
+    include_sliding_windows: bool = True,
 ) -> list[KnowledgeChunk]:
     paragraphs = _split_paragraphs(text)
     chunks = [
@@ -672,15 +681,16 @@ def _build_chunks(
         )
         for paragraph in paragraphs
     ]
-    chunks.extend(
-        _sliding_window_chunks(
-            source=source,
-            paragraphs=paragraphs,
-            document_id=document_id,
-            title=title,
-            category=category,
+    if include_sliding_windows:
+        chunks.extend(
+            _sliding_window_chunks(
+                source=source,
+                paragraphs=paragraphs,
+                document_id=document_id,
+                title=title,
+                category=category,
+            )
         )
-    )
     return chunks
 
 
@@ -873,7 +883,6 @@ def _score(
         score -= 160
     if category == "route" and chunk.chunk_type == "route":
         score += 80
-
     if category == "height":
         if "通高" in text:
             score += 120

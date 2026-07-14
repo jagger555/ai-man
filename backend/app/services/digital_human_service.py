@@ -138,8 +138,12 @@ def _serialize_config(config: DigitalHumanConfig) -> dict[str, str | bool]:
 
 
 def resolve_livetalking_root() -> Path:
-    raw_root = os.getenv("LIVETALKING_ROOT", r"D:\Projects\DH\LiveTalking")
-    root = Path(raw_root)
+    raw_root = os.getenv("LIVETALKING_ROOT", "").strip()
+    root = (
+        Path(raw_root)
+        if raw_root
+        else Path(__file__).resolve().parents[4] / "LiveTalking"
+    )
     if (root / "app.py").exists():
         return root
     nested_root = root / "LiveTalking"

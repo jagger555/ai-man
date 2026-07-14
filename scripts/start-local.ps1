@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
-    [string]$LiveTalkingPath = "D:\Projects\DH",
+    [string]$LiveTalkingPath = "",
     [string]$LiveTalkingPython = "",
     [string]$LiveTalkingCondaEnv = "livetalking",
     [int]$LiveTalkingPort = 8010,
@@ -84,6 +84,37 @@ function Wait-HttpReady {
     }
 
     return $false
+}
+
+function Test-BackendDigitalHumanConfig {
+    param(
+        [string]$BackendUrl,
+        [string]$ExpectedBaseUrl
+    )
+
+    $configUrl = "$BackendUrl/api/digital-human/config"
+    $previousProgressPreference = $ProgressPreference
+    $ProgressPreference = "SilentlyContinue"
+    try {
+        $response = Invoke-WebRequest -Uri $configUrl -UseBasicParsing -TimeoutSec 3
+        $config = $response.Content | ConvertFrom-Json
+        if (-not $config.base_url) {
+            Write-Warning "Backend is running, but /api/digital-human/config returned an empty base_url. Restart the backend or rerun this script after stopping port $BackendPort."
+            return $false
+        }
+        if ($config.base_url -ne $ExpectedBaseUrl) {
+            Write-Warning "Backend DIGITAL_HUMAN_BASE_URL is '$($config.base_url)', expected '$ExpectedBaseUrl'. Reused backend processes keep their old environment."
+            return $false
+        }
+        return $true
+    }
+    catch {
+        Write-Warning "Could not verify backend digital human config at ${configUrl}: $($_.Exception.Message)"
+        return $false
+    }
+    finally {
+        $ProgressPreference = $previousProgressPreference
+    }
 }
 
 function Get-PortOwnerProcesses {
@@ -292,6 +323,9 @@ if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
 $ProjectRoot = (Resolve-Path $ProjectRoot).Path
 $BackendPath = Join-Path $ProjectRoot "backend"
 $FrontendPath = Join-Path $ProjectRoot "frontend"
+if ([string]::IsNullOrWhiteSpace($LiveTalkingPath)) {
+    $LiveTalkingPath = Join-Path $ProjectRoot "LiveTalking"
+}
 $RunDir = Join-Path $env:TEMP "ai-man-local-run"
 $LogDir = Join-Path $RunDir "logs"
 $PidFile = Join-Path $RunDir "pids.json"
@@ -380,6 +414,7 @@ if (-not $SkipLiveTalking -and -not $DryRun) {
 
 if (Test-TcpPortOpen "127.0.0.1" $BackendPort) {
     Write-Host "Backend port $BackendPort is already open. Reusing it."
+    [void](Test-BackendDigitalHumanConfig -BackendUrl "http://127.0.0.1:$BackendPort" -ExpectedBaseUrl $digitalHumanBaseUrl)
     $services += [pscustomobject]@{
         name = "backend"
         pid = $null
@@ -390,7 +425,7 @@ if (Test-TcpPortOpen "127.0.0.1" $BackendPort) {
 }
 else {
     $backendLog = Join-Path $LogDir "backend.log"
-    $backendCommand = "`$env:DIGITAL_HUMAN_BASE_URL = $(Quote-PS $digitalHumanBaseUrl); `$env:DIGITAL_HUMAN_AVATAR = $(Quote-PS $LiveTalkingAvatarId); python -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 2>&1 | Tee-Object -FilePath $(Quote-PS $backendLog) -Append"
+    $backendCommand = "`$env:DIGITAL_HUMAN_BASE_URL = $(Quote-PS $digitalHumanBaseUrl); `$env:DIGITAL_HUMAN_AVATAR = $(Quote-PS $LiveTalkingAvatarId); `$env:LIVETALKING_ROOT = $(Quote-PS $LiveTalkingPath); python -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 2>&1 | Tee-Object -FilePath $(Quote-PS $backendLog) -Append"
     $backendProcess = Start-ManagedProcess -Name "backend" -WorkingDirectory $BackendPath -Command $backendCommand
     $services += [pscustomobject]@{
         name = "backend"

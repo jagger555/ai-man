@@ -34,6 +34,7 @@ def test_admin_dashboard_returns_empty_7_day_contract(monkeypatch, tmp_path):
         "feedback_helpful_rate": 0.0,
     }
     assert body["popular_questions"] == []
+    assert body["visitor_analytics"] == {}
     assert len(body["weekly_service_trend"]) == 7
     assert len(body["satisfaction_trend"]) == 7
     assert [item["date"] for item in body["weekly_service_trend"]] == _last_7_dates()

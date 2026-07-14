@@ -39,10 +39,11 @@ import {
 import { ErrorBoundary } from "./ErrorBoundary";
 import { DashboardPanel } from "./DashboardPanel";
 import { DigitalHumanPanel } from "./DigitalHumanPanel";
-import { KnowledgeManager } from "./KnowledgeManager";
+import { KnowledgeManager, type KnowledgeDraft } from "./KnowledgeManager";
 import { VisitorReportPanel } from "./VisitorReportPanel";
 import { AvatarManager } from "./AvatarManager";
 import { StreamingAsrClient } from "./streamingAsrClient";
+import { ScenicMapPanel } from "./ScenicMapPanel";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -66,6 +67,17 @@ type HeroHeaderProps = {
 
 type AdminSection = "overview" | "insights" | "qa" | "knowledge" | "avatar";
 type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "service_guide";
+type PendingDashboardAction =
+  | "low-confidence"
+  | "high-frequency"
+  | "unhelpful-feedback"
+  | "irrelevant-question"
+  | "digital-human";
+type LowConfidenceDashboardAction =
+  | "补充知识库"
+  | "优化问法"
+  | "标记无关"
+  | "人工复核";
 
 type GuideServiceEntry = {
   id: GuideIntent;
@@ -74,6 +86,26 @@ type GuideServiceEntry = {
   summary: string;
   supports: string[];
   icon: typeof Route;
+};
+
+const performanceScheduleNotice = {
+  validPeriod: "2026/7/2 至 2026/7/31",
+  source: "以景区当日公告为准",
+  items: [
+    {
+      title: "九龙灌浴",
+      rows: [
+        { label: "平日每天", time: "10:00、11:30、14:45、16:45", count: "4场" },
+        { label: "周六周日", time: "10:00、11:30、13:00、14:45、16:45", count: "5场" },
+      ],
+    },
+    {
+      title: "梵宫文化体验之旅",
+      rows: [
+        { label: "每天", time: "10:00、11:00、12:00、13:30、14:30、15:30", count: "6场" },
+      ],
+    },
+  ],
 };
 
 const mockGuideServiceEntries: GuideServiceEntry[] = [
@@ -97,8 +129,8 @@ const mockGuideServiceEntries: GuideServiceEntry[] = [
     id: "performance_time",
     title: "演出时间",
     helper: "实时场次 / 演出地点",
-    summary: "可查看今日演出时间表，并提示下一场演出的时间与地点。",
-    supports: ["实时演出时间表", "下一场提醒", "演出地点导航"],
+    summary: "可查看 2026 年 7 月灵山胜境演出场次通知，包含九龙灌浴和梵宫文化体验之旅。",
+    supports: ["九龙灌浴平日4场", "九龙灌浴周末5场", "梵宫文化体验之旅6场"],
     icon: CalendarClock,
   },
   {
@@ -371,6 +403,40 @@ function AnswerPreviewCard({
   );
 }
 
+function PerformanceSchedulePanel() {
+  return (
+    <section className="performance-schedule-panel" aria-label="灵山胜境演出时间">
+      <div className="performance-head">
+        <div>
+          <p className="eyebrow">PERFORMANCE NOTICE</p>
+          <h3>2026 年 7 月演出场次通知</h3>
+          <span>提示有效期：{performanceScheduleNotice.validPeriod}</span>
+        </div>
+        <span className="notice-badge">{performanceScheduleNotice.source}</span>
+      </div>
+      <div className="performance-grid">
+        {performanceScheduleNotice.items.map((item) => (
+          <article key={item.title} className="performance-card">
+            <strong>{item.title}</strong>
+            <div className="performance-rows">
+              {item.rows.map((row) => (
+                <div key={`${item.title}-${row.label}`} className="performance-row">
+                  <span>{row.label}</span>
+                  <b>{row.count}</b>
+                  <p>{row.time}</p>
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+      <p className="performance-note">
+        演出安排可能因天气、客流或景区运营临时调整，请以景区当日公告和现场工作人员说明为准。
+      </p>
+    </section>
+  );
+}
+
 function GuideServiceBar({
   entries,
   isLoading,
@@ -422,6 +488,10 @@ export function App() {
   const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
   const [activeGuideService, setActiveGuideService] =
     useState<GuideServiceEntry | null>(null);
+  const [serviceNarration, setServiceNarration] = useState<{
+    key: string;
+    text: string;
+  } | null>(null);
 
   const [records, setRecords] = useState<ChatRecord[]>([]);
   const [recordsTotalCount, setRecordsTotalCount] = useState(0);
@@ -470,6 +540,7 @@ export function App() {
     useState<ConfidenceFilter>("all");
   const [reliableFilter, setReliableFilter] = useState<ReliableFilter>("all");
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
+  const [knowledgeDraft, setKnowledgeDraft] = useState<KnowledgeDraft | null>(null);
 
   const sessionId = useMemo(() => `web-${Date.now()}`, []);
   const asrClientRef = useRef<StreamingAsrClient | null>(null);
@@ -787,6 +858,10 @@ export function App() {
         body: JSON.stringify({
           session_id: sessionId,
           question: trimmedQuestion,
+          current_location: "",
+          visitor_type: "",
+          available_time: "",
+          route_context: "",
         }),
       });
 
@@ -807,6 +882,7 @@ export function App() {
     const matchedEntry = mockGuideServiceEntries.find((entry) => entry.id === intent) ?? null;
     setActiveGuideService(matchedEntry);
     setResponse(null);
+    setServiceNarration(null);
     setError("");
     setIsAnswerExpanded(false);
   }
@@ -1012,6 +1088,110 @@ export function App() {
     }
   }
 
+  function openQuestionDetail(question: string) {
+    resetFilters();
+    setActiveView("admin");
+    setActiveAdminSection("qa");
+    setKeywordFilter(question);
+    const matchedRecord = records.find(
+      (record) => record.original_question === question,
+    );
+    if (matchedRecord) {
+      setSelectedRecord(matchedRecord);
+    }
+  }
+
+  function createKnowledgeDraftFromQuestion(
+    question: string,
+    options: {
+      titlePrefix?: string;
+      content?: string;
+      category?: KnowledgeDraft["category"];
+      status?: KnowledgeDraft["status"];
+    } = {},
+  ) {
+    const matchedRecord = records.find(
+      (record) => record.original_question === question,
+    );
+    const sourceText =
+      matchedRecord?.sources
+        .slice(0, 2)
+        .map((source, index) => `参考资料 ${index + 1}：${source.text}`)
+        .join("\n\n") ?? "";
+    const content =
+      options.content ??
+      [
+        `游客问题：${question}`,
+        matchedRecord ? `现有回答：${matchedRecord.answer}` : "",
+        sourceText,
+        "建议维护：补充官方讲解词、FAQ 或服务规则后，将状态改为启用。",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+    setActiveView("admin");
+    setActiveAdminSection("knowledge");
+    setKnowledgeDraft({
+      nonce: Date.now(),
+      title: `${options.titlePrefix ?? "待补充知识"}：${truncate(question, 24)}`,
+      category: options.category ?? "faq",
+      source_name: "后台运营处理",
+      status: options.status ?? "draft",
+      content,
+    });
+  }
+
+  function markQuestionUnrelated(question: string) {
+    createKnowledgeDraftFromQuestion(question, {
+      titlePrefix: "边界问题",
+      category: "faq",
+      status: "draft",
+      content: [
+        `游客问题：${question}`,
+        "建议回答：这个问题超出灵山胜境景区导览服务范围，我可以继续为您介绍景点历史、文化典故、游览路线、演出时间、票务和游客服务信息。",
+        "用途：保存为边界 FAQ 后，可用于统一处理无关问题，避免进入常规景区知识补充流程。",
+      ].join("\n\n"),
+    });
+  }
+
+  function handlePendingDashboardAction(action: PendingDashboardAction) {
+    setActiveView("admin");
+    if (action === "low-confidence" || action === "high-frequency") {
+      resetFilters();
+      setActiveAdminSection("qa");
+      setConfidenceFilter("low");
+      return;
+    }
+    if (action === "unhelpful-feedback") {
+      setActiveAdminSection("insights");
+      return;
+    }
+    if (action === "irrelevant-question") {
+      resetFilters();
+      setActiveAdminSection("qa");
+      setKeywordFilter("股票");
+      return;
+    }
+    setActiveAdminSection("avatar");
+  }
+
+  function handleLowConfidenceAction(
+    action: LowConfidenceDashboardAction,
+    record: LowConfidenceRecord,
+  ) {
+    if (action === "补充知识库") {
+      createKnowledgeDraftFromQuestion(record.original_question, {
+        titlePrefix: "低置信补充",
+      });
+      return;
+    }
+    if (action === "标记无关") {
+      markQuestionUnrelated(record.original_question);
+      return;
+    }
+    openQuestionDetail(record.original_question);
+  }
+
   function resetFilters() {
     setKeywordFilter("");
     setSessionFilter("");
@@ -1037,13 +1217,13 @@ export function App() {
           hidden={activeView !== "chat"}
         >
           <DigitalHumanPanel
-            latestAnswer={response?.answer ?? ""}
+            latestAnswer={response?.answer ?? serviceNarration?.text ?? ""}
             latestAnswerKey={
               response
                 ? response.record_id !== null
                   ? `record-${response.record_id}`
                   : `${response.session_id}-${response.latency_ms}-${response.answer}`
-                : ""
+                : serviceNarration?.key ?? ""
             }
             isAnswerLoading={isLoading}
             refreshKey={digitalHumanRefreshKey}
@@ -1074,6 +1254,16 @@ export function App() {
                 <p className="error-message">{feedbackError}</p>
               ) : null}
 
+              {activeGuideService?.id === "route_guide" ||
+              activeGuideService?.id === "map_guide" ? (
+                <ScenicMapPanel
+                  defaultMode={activeGuideService.id}
+                  onNarrationChange={setServiceNarration}
+                />
+              ) : null}
+              {activeGuideService?.id === "performance_time" ? (
+                <PerformanceSchedulePanel />
+              ) : null}
               <AnswerPreviewCard
                 response={response}
                 servicePreview={activeGuideService}
@@ -1169,6 +1359,11 @@ export function App() {
                 isLoading={dashboardLoading}
                 error={dashboardError}
                 onRefresh={() => void loadDashboard()}
+                onPendingAction={handlePendingDashboardAction}
+                onViewQuestion={openQuestionDetail}
+                onAddKnowledge={createKnowledgeDraftFromQuestion}
+                onMarkUnrelated={markQuestionUnrelated}
+                onReviewLowConfidence={handleLowConfidenceAction}
               />
                 ) : null}
 
@@ -1283,7 +1478,7 @@ export function App() {
                 ) : null}
 
                 {activeAdminSection === "knowledge" ? (
-              <KnowledgeManager />
+              <KnowledgeManager initialDraft={knowledgeDraft} />
                 ) : null}
 
                 {activeAdminSection === "qa" ? (

@@ -427,22 +427,24 @@ class ChatRecordService:
         weekly_by_date = {row["record_date"]: row for row in weekly_rows}
         satisfaction_by_date = {row["feedback_date"]: row for row in satisfaction_rows}
 
+        summary = {
+            "total_records": int(summary_row["total_records"]),
+            "today_records": int(summary_row["today_records"]),
+            "week_records": int(summary_row["week_records"]),
+            "average_response_time_ms": int(summary_row["average_response_time_ms"]),
+            "low_confidence_count": int(summary_row["low_confidence_count"]),
+            "accuracy_rate": _load_latest_accuracy_rate(),
+            "feedback_total_count": feedback_total_count,
+            "feedback_helpful_count": feedback_helpful_count,
+            "feedback_unhelpful_count": feedback_unhelpful_count,
+            "feedback_helpful_rate": _safe_rate(
+                feedback_helpful_count,
+                feedback_total_count,
+            ),
+        }
+
         return {
-            "summary": {
-                "total_records": int(summary_row["total_records"]),
-                "today_records": int(summary_row["today_records"]),
-                "week_records": int(summary_row["week_records"]),
-                "average_response_time_ms": int(summary_row["average_response_time_ms"]),
-                "low_confidence_count": int(summary_row["low_confidence_count"]),
-                "accuracy_rate": _load_latest_accuracy_rate(),
-                "feedback_total_count": feedback_total_count,
-                "feedback_helpful_count": feedback_helpful_count,
-                "feedback_unhelpful_count": feedback_unhelpful_count,
-                "feedback_helpful_rate": _safe_rate(
-                    feedback_helpful_count,
-                    feedback_total_count,
-                ),
-            },
+            "summary": summary,
             "weekly_service_trend": [
                 _weekly_trend_item(day, weekly_by_date.get(day.isoformat()))
                 for day in trend_dates
@@ -462,7 +464,11 @@ class ChatRecordService:
                 _satisfaction_trend_item(day, satisfaction_by_date.get(day.isoformat()))
                 for day in trend_dates
             ],
-            "visitor_analytics": VisitorAnalyticsService().get_summary(),
+            "visitor_analytics": (
+                VisitorAnalyticsService().get_summary()
+                if summary["total_records"] > 0
+                else {}
+            ),
         }
 
     def save_feedback(

@@ -14,6 +14,10 @@ router = APIRouter(prefix="/api", tags=["chat"])
 class ChatRequest(BaseModel):
     session_id: str = Field(default="default")
     question: str = Field(min_length=1, max_length=500)
+    current_location: str = Field(default="未提供", max_length=200)
+    visitor_type: str = Field(default="未提供", max_length=100)
+    available_time: str = Field(default="未提供", max_length=100)
+    route_context: str = Field(default="未提供", max_length=2000)
 
 
 @router.post("/chat")
@@ -22,6 +26,10 @@ def chat(request: ChatRequest):
     answer = service.answer(
         session_id=request.session_id,
         question=request.question,
+        current_location=request.current_location,
+        visitor_type=request.visitor_type,
+        available_time=request.available_time,
+        route_context=request.route_context,
     )
     return JSONResponse(
         {

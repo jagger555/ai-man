@@ -89,13 +89,13 @@ def get_database_config() -> DatabaseConfig:
 
 
 def get_digital_human_config() -> DigitalHumanConfig:
-    voice = os.getenv("DIGITAL_HUMAN_VOICE", "")
+    voice = _env_or_default("DIGITAL_HUMAN_VOICE", "")
     return DigitalHumanConfig(
-        base_url=os.getenv("DIGITAL_HUMAN_BASE_URL", "http://127.0.0.1:8010").rstrip("/"),
-        avatar=os.getenv("DIGITAL_HUMAN_AVATAR", ""),
+        base_url=_env_or_default("DIGITAL_HUMAN_BASE_URL", "http://127.0.0.1:8010").rstrip("/"),
+        avatar=_env_or_default("DIGITAL_HUMAN_AVATAR", ""),
         voice=voice,
-        ref_audio=os.getenv("DIGITAL_HUMAN_REF_AUDIO", voice),
-        ref_text=os.getenv("DIGITAL_HUMAN_REF_TEXT", ""),
+        ref_audio=_env_or_default("DIGITAL_HUMAN_REF_AUDIO", voice),
+        ref_text=_env_or_default("DIGITAL_HUMAN_REF_TEXT", ""),
     )
 
 
@@ -125,3 +125,11 @@ def get_speech_config() -> SpeechConfig:
         tts_sample_rate=int(os.getenv("BAILIAN_TTS_SAMPLE_RATE", os.getenv("SPEECH_TTS_SAMPLE_RATE", "24000"))),
         timeout=int(os.getenv("SPEECH_TIMEOUT", "30")),
     )
+
+
+def _env_or_default(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    return stripped if stripped else default

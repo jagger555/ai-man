@@ -206,8 +206,15 @@ def _load_base_chunks():
             raise HTTPException(status_code=404, detail="Knowledge package not found")
         return load_chunks_from_public_package(path)
 
-    markdown_path = Path(__file__).resolve().parents[3] / "data" / "sample_scenic" / "knowledge.md"
-    return load_chunks_from_markdown_file(markdown_path)
+    sample_root = Path(__file__).resolve().parents[3] / "data" / "sample_scenic"
+    chunks = load_chunks_from_markdown_file(sample_root / "knowledge.md")
+    chunks.extend(
+        load_chunks_from_markdown_file(
+            sample_root / "official_facts.md",
+            include_sliding_windows=False,
+        )
+    )
+    return chunks
 
 
 def _serialize_document(document: KnowledgeDocument) -> dict[str, object]:

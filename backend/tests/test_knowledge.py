@@ -169,6 +169,120 @@ def test_default_sample_knowledge_snapshot_is_searchable(monkeypatch, tmp_path):
     assert "灵山大佛" in response.json()["results"][0]["text"]
 
 
+def test_default_sample_retrieval_returns_complete_dengyun_meaning_in_top_three(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    _reset_knowledge_base_cache()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/admin/knowledge/search",
+        params={"query": "灵山大佛216级登云道有什么佛教寓意？", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    retrieved_text = "\n".join(item["text"] for item in response.json()["results"])
+    assert "烦恼尽除" in retrieved_text
+    assert "愿望圆满" in retrieved_text
+
+
+def test_default_sample_retrieval_keeps_ticket_prices_together_in_top_three(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    _reset_knowledge_base_cache()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/admin/knowledge/search",
+        params={"query": "灵山胜境成人票、半价票和观光车分别多少钱？", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    retrieved_text = "\n".join(item["text"] for item in response.json()["results"])
+    assert "210元" in retrieved_text
+    assert "105元" in retrieved_text
+    assert "40元/人" in retrieved_text
+
+
+def test_official_fact_chunks_do_not_mix_unrelated_topics(monkeypatch, tmp_path):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    _reset_knowledge_base_cache()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/admin/knowledge/search",
+        params={"query": "观光车多少钱？", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    top_text = response.json()["results"][0]["text"]
+    assert "40元/人" in top_text
+    assert "登云道" not in top_text
+
+
+def test_default_sample_uses_one_canonical_jiulong_height():
+    knowledge_path = (
+        Path(__file__).resolve().parents[2]
+        / "data"
+        / "sample_scenic"
+        / "knowledge.md"
+    )
+    knowledge_text = knowledge_path.read_text(encoding="utf-8")
+
+    assert "总高27.5米" in knowledge_text
+    assert "总高27.2m" not in knowledge_text
+
+
+def test_default_sample_retrieval_returns_jiulong_height_in_top_three(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    _reset_knowledge_base_cache()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/admin/knowledge/search",
+        params={
+            "query": "九龙灌浴景观总高多少，中央太子佛像多高？",
+            "limit": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    retrieved_text = "\n".join(item["text"] for item in response.json()["results"])
+    assert "九龙灌浴" in retrieved_text
+    assert "27.5米" in retrieved_text
+    assert "7.2米" in retrieved_text
+
+
+def test_default_sample_retrieval_returns_fangong_size_in_top_three(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    monkeypatch.setenv("KNOWLEDGE_DOCUMENTS_PATH", str(tmp_path / "knowledge.db"))
+    _reset_knowledge_base_cache()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/admin/knowledge/search",
+        params={
+            "query": "灵山梵宫的建筑面积和最高处高度是多少？",
+            "limit": 3,
+        },
+    )
+
+    assert response.status_code == 200
+    retrieved_text = "\n".join(item["text"] for item in response.json()["results"])
+    assert "72000" in retrieved_text
+    assert "66.5米" in retrieved_text
+
+
 def test_admin_can_create_update_and_delete_managed_knowledge_document(
     monkeypatch, tmp_path
 ):

@@ -54,7 +54,20 @@ const defaultUploadForm = {
   status: "active" as KnowledgeDocumentStatus,
 };
 
-export function KnowledgeManager() {
+export type KnowledgeDraft = {
+  nonce: number;
+  title?: string;
+  category?: KnowledgeDocumentCategory;
+  source_name?: string;
+  status?: KnowledgeDocumentStatus;
+  content?: string;
+};
+
+export function KnowledgeManager({
+  initialDraft,
+}: {
+  initialDraft?: KnowledgeDraft | null;
+}) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [summary, setSummary] = useState<KnowledgeSummary>(emptySummary);
   const [loading, setLoading] = useState(false);
@@ -72,6 +85,23 @@ export function KnowledgeManager() {
   useEffect(() => {
     void loadDocuments();
   }, []);
+
+  useEffect(() => {
+    if (!initialDraft) {
+      return;
+    }
+
+    setEditorMode("manual");
+    setEditingDocumentId(null);
+    setError("");
+    setManualForm({
+      title: initialDraft.title ?? "",
+      category: initialDraft.category ?? "faq",
+      source_name: initialDraft.source_name ?? "后台运营处理",
+      status: initialDraft.status ?? "draft",
+      content: initialDraft.content ?? "",
+    });
+  }, [initialDraft?.nonce]);
 
   async function loadDocuments(nextFilters?: {
     keyword?: string;

@@ -13,9 +13,28 @@ type DashboardPanelProps = {
   isLoading: boolean;
   error: string;
   onRefresh: () => void;
+  onPendingAction: (action: PendingAction) => void;
+  onViewQuestion: (question: string) => void;
+  onAddKnowledge: (question: string) => void;
+  onMarkUnrelated: (question: string) => void;
+  onReviewLowConfidence: (
+    action: LowConfidenceAction,
+    record: LowConfidenceRecord,
+  ) => void;
 };
 
 type Tone = "normal" | "warning" | "danger" | "success";
+type PendingAction =
+  | "low-confidence"
+  | "high-frequency"
+  | "unhelpful-feedback"
+  | "irrelevant-question"
+  | "digital-human";
+type LowConfidenceAction =
+  | "补充知识库"
+  | "优化问法"
+  | "标记无关"
+  | "人工复核";
 
 type ClassifiedQuestion = PopularQuestion & {
   category: string;
@@ -23,25 +42,18 @@ type ClassifiedQuestion = PopularQuestion & {
   issueHint?: string;
 };
 
-const lingshanAttractions: VisitorAnalyticsItem[] = [
-  { label: "灵山大佛", count: 428, share: 0.26 },
-  { label: "九龙灌浴", count: 386, share: 0.23 },
-  { label: "灵山梵宫", count: 332, share: 0.2 },
-  { label: "五印坛城", count: 216, share: 0.13 },
-  { label: "祥符禅寺", count: 174, share: 0.11 },
-  { label: "阿育王柱", count: 112, share: 0.07 },
-];
-
-const serviceDemandDistribution: VisitorAnalyticsItem[] = [
-  { label: "路线导览", count: 342, share: 0.31 },
-  { label: "演出时间", count: 258, share: 0.24 },
-  { label: "厕所与餐饮", count: 204, share: 0.19 },
-  { label: "购票与停车", count: 168, share: 0.15 },
-  { label: "文化讲解", count: 126, share: 0.11 },
-];
-
 function formatNumber(value: number | undefined): string {
   return typeof value === "number" ? value.toLocaleString("zh-CN") : "--";
+}
+
+function formatMetric(
+  value: number | undefined,
+  options: { prefix?: string; suffix?: string } = {},
+): string {
+  if (typeof value !== "number") {
+    return "--";
+  }
+  return `${options.prefix ?? ""}${formatNumber(value)}${options.suffix ?? ""}`;
 }
 
 function formatPercent(value: number | undefined): string {
@@ -89,11 +101,6 @@ function getBarWidth(value: number, maxValue: number): string {
     return "0%";
   }
   return `${Math.max(4, Math.round((value / maxValue) * 100))}%`;
-}
-
-function handlePlaceholderAction(action: string, target: string) {
-  console.log(`[后台占位操作] ${action}: ${target}`);
-  window.alert(`${action}：当前为前端占位，暂未接入写入接口。`);
 }
 
 function classifyQuestion(question: string): Pick<ClassifiedQuestion, "category" | "tagTone" | "issueHint"> {
@@ -157,6 +164,11 @@ export function DashboardPanel({
   isLoading,
   error,
   onRefresh,
+  onPendingAction,
+  onViewQuestion,
+  onAddKnowledge,
+  onMarkUnrelated,
+  onReviewLowConfidence,
 }: DashboardPanelProps) {
   const summary = dashboard?.summary;
   const weeklyTrend = dashboard?.weekly_service_trend ?? [];
@@ -164,6 +176,11 @@ export function DashboardPanel({
   const satisfactionTrend = dashboard?.satisfaction_trend ?? [];
   const visitorAnalytics = dashboard?.visitor_analytics ?? {};
   const ageGroups = visitorAnalytics.age_groups ?? [];
+  const topAttractions = visitorAnalytics.top_attractions ?? [];
+  const serviceDemandDistribution: VisitorAnalyticsItem[] = [];
+  const hasVisitorAnalytics =
+    typeof visitorAnalytics.total_visits === "number" &&
+    visitorAnalytics.total_visits > 0;
 
   const hasTrendData = weeklyTrend.some(
     (item) =>
@@ -232,30 +249,35 @@ export function DashboardPanel({
 
   const pendingItems = [
     {
+      action: "low-confidence" as PendingAction,
       label: "低置信问答待复核",
       count: summary?.low_confidence_count ?? 0,
       hint: "优先补充资料或人工确认回答边界。",
       tone: "warning" as Tone,
     },
     {
+      action: "high-frequency" as PendingAction,
       label: "高频未命中问题",
       count: Math.max(0, Math.round((summary?.low_confidence_count ?? 0) * 0.34)),
       hint: "建议归并同类问法后补入知识库。",
       tone: "warning" as Tone,
     },
     {
+      action: "unhelpful-feedback" as PendingAction,
       label: "无帮助反馈",
       count: summary?.feedback_unhelpful_count ?? 0,
       hint: "游客明确反馈无帮助，需要回看答案。",
       tone: "danger" as Tone,
     },
     {
+      action: "irrelevant-question" as PendingAction,
       label: "无关问题",
       count: popularQuestions.filter((item) => classifyQuestion(item.question).category === "无关问题").length,
       hint: "建议标记边界，避免进入知识库。",
       tone: "normal" as Tone,
     },
     {
+      action: "digital-human" as PendingAction,
       label: "设备或数字人异常",
       count: fallbackCount,
       hint: "关注模型降级、Mock 回复和数字人连接状态。",
@@ -322,7 +344,7 @@ export function DashboardPanel({
                   <button
                     type="button"
                     className="text-pill-action"
-                    onClick={() => handlePlaceholderAction("去处理", item.label)}
+                    onClick={() => onPendingAction(item.action)}
                   >
                     去处理
                   </button>
@@ -467,21 +489,21 @@ export function DashboardPanel({
                   <button
                     type="button"
                     className="text-pill-action"
-                    onClick={() => handlePlaceholderAction("查看详情", item.question)}
+                    onClick={() => onViewQuestion(item.question)}
                   >
                     查看详情
                   </button>
                   <button
                     type="button"
                     className="text-pill-action"
-                    onClick={() => handlePlaceholderAction("加入知识库", item.question)}
+                    onClick={() => onAddKnowledge(item.question)}
                   >
                     加入知识库
                   </button>
                   <button
                     type="button"
                     className="text-pill-action muted"
-                    onClick={() => handlePlaceholderAction("标记无关", item.question)}
+                    onClick={() => onMarkUnrelated(item.question)}
                   >
                     标记无关
                   </button>
@@ -535,7 +557,12 @@ export function DashboardPanel({
                         key={`${record.id}-${action}`}
                         type="button"
                         className={action === suggestedAction ? "text-pill-action" : "text-pill-action muted"}
-                        onClick={() => handlePlaceholderAction(action, record.original_question)}
+                        onClick={() =>
+                          onReviewLowConfidence(
+                            action as LowConfidenceAction,
+                            record,
+                          )
+                        }
                       >
                         {action}
                       </button>
@@ -556,31 +583,31 @@ export function DashboardPanel({
             <strong>游客行为数据</strong>
             <p>聚焦灵山胜境真实运营场景下的景点和服务关注度。</p>
           </div>
-          <span>{visitorAnalytics.sheet_name || "mock"}</span>
+          <span>{hasVisitorAnalytics ? visitorAnalytics.sheet_name || "游客行为" : "暂无数据"}</span>
         </div>
         <div className="analytics-summary-grid operations-analytics-grid">
           <article>
             <small>平均停留</small>
-            <strong>{visitorAnalytics.average_stay_duration ?? 4.2} h</strong>
+            <strong>{formatMetric(visitorAnalytics.average_stay_duration, { suffix: " h" })}</strong>
           </article>
           <article>
             <small>人均消费</small>
-            <strong>¥{formatNumber(visitorAnalytics.average_total_cost ?? 186)}</strong>
+            <strong>{formatMetric(visitorAnalytics.average_total_cost, { prefix: "¥" })}</strong>
           </article>
           <article>
             <small>平均满意度</small>
-            <strong>{visitorAnalytics.average_satisfaction ?? 4.6}</strong>
+            <strong>{formatMetric(visitorAnalytics.average_satisfaction)}</strong>
           </article>
           <article>
             <small>平均同行人数</small>
-            <strong>{visitorAnalytics.average_group_size ?? 2.8} 人</strong>
+            <strong>{formatMetric(visitorAnalytics.average_group_size, { suffix: " 人" })}</strong>
           </article>
         </div>
         <div className="visitor-data-grid">
           <div className="analytics-list operations-list">
             <strong>热门景点</strong>
-            {lingshanAttractions.length > 0 ? (
-              lingshanAttractions.map((item) => (
+            {topAttractions.length > 0 ? (
+              topAttractions.map((item) => (
                 <div key={item.label} className="analytics-row">
                   <span>{item.label}</span>
                   <em>{formatNumber(item.count)}</em>
@@ -605,12 +632,16 @@ export function DashboardPanel({
           </div>
           <div className="analytics-list operations-list">
             <strong>服务需求分布</strong>
-            {serviceDemandDistribution.map((item) => (
-              <div key={item.label} className="analytics-row">
-                <span>{item.label}</span>
-                <em>{formatPercent(item.share)}</em>
-              </div>
-            ))}
+            {serviceDemandDistribution.length > 0 ? (
+              serviceDemandDistribution.map((item) => (
+                <div key={item.label} className="analytics-row">
+                  <span>{item.label}</span>
+                  <em>{formatPercent(item.share)}</em>
+                </div>
+              ))
+            ) : (
+              <EmptyState />
+            )}
           </div>
         </div>
       </section>

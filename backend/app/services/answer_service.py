@@ -8,7 +8,7 @@ from app.services.chat_record_service import ChatRecord, ChatRecordService
 from app.services.knowledge_service import KnowledgeBase
 from app.services.llm.llm_factory import get_guide_llm
 from app.services.llm.mock_llm import MockGuideLLM
-from app.services.prompt_service import build_prompt, clean_question
+from app.services.prompt_service import GUIDE_SYSTEM_PROMPT, PromptContext, build_prompt, clean_question
 from app.services.retriever_service import RetrieverService
 
 LOW_CONFIDENCE_ANSWER = (
@@ -39,9 +39,24 @@ class AnswerService:
         self._knowledge_base = knowledge_base
         self._chat_record_service = ChatRecordService()
 
-    def answer(self, session_id: str, question: str) -> ChatAnswer:
+    def answer(
+        self,
+        session_id: str,
+        question: str,
+        *,
+        current_location: str = "未提供",
+        visitor_type: str = "未提供",
+        available_time: str = "未提供",
+        route_context: str = "未提供",
+    ) -> ChatAnswer:
         start = time.perf_counter()
         cleaned_question = clean_question(question)
+        prompt_context = PromptContext(
+            current_location=current_location,
+            visitor_type=visitor_type,
+            available_time=available_time,
+            route_context=route_context,
+        )
         chat_config = get_chat_config()
         recent_history = list(
             reversed(
@@ -52,9 +67,15 @@ class AnswerService:
             )
         )
         retrieval = RetrieverService(self._knowledge_base).retrieve(cleaned_question)
-        prompt = build_prompt(cleaned_question, retrieval.sources, recent_history)
+        prompt = build_prompt(
+            cleaned_question,
+            retrieval.sources,
+            recent_history,
+            prompt_context,
+        )
+        has_route_context = route_context.strip() not in {"", "未提供"}
 
-        if retrieval.reliable:
+        if retrieval.reliable or has_route_context:
             answer, model_provider, model_status = self._generate_answer(prompt)
         else:
             answer = LOW_CONFIDENCE_ANSWER
@@ -97,11 +118,15 @@ class AnswerService:
         llm = get_guide_llm(llm_config)
 
         try:
-            return llm.generate(prompt), llm.provider, _success_status(llm.provider)
+            return (
+                llm.generate(prompt, system_prompt=GUIDE_SYSTEM_PROMPT),
+                llm.provider,
+                _success_status(llm.provider),
+            )
         except Exception as exc:
             fallback = MockGuideLLM()
             return (
-                fallback.generate(prompt),
+                fallback.generate(prompt, system_prompt=GUIDE_SYSTEM_PROMPT),
                 fallback.provider,
                 f"fallback_to_mock: {exc}",
             )

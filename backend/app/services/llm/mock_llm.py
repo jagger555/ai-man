@@ -8,8 +8,8 @@ from app.services.llm.base_llm import BaseGuideLLM
 class MockGuideLLM(BaseGuideLLM):
     provider = "mock"
 
-    def generate(self, prompt: str) -> str:
-        context = _extract_primary_context(prompt)
+    def generate(self, prompt: str, system_prompt: str | None = None) -> str:
+        context = _extract_primary_context(prompt) or _extract_route_context(prompt)
         if not context:
             return (
                 "当前景区知识库中暂未提供足够可靠的信息。"
@@ -34,3 +34,15 @@ def _extract_primary_context(prompt: str) -> str:
     if not match:
         return ""
     return match.group(1).strip()
+
+
+def _extract_route_context(prompt: str) -> str:
+    match = re.search(
+        r"地图/路线检索结果：\s*(.+?)(?:\n\n请基于以上信息回答。|\Z)",
+        prompt,
+        re.DOTALL,
+    )
+    if not match:
+        return ""
+    route_context = match.group(1).strip()
+    return "" if route_context == "未提供" else route_context

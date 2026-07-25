@@ -12,3 +12,15 @@ dist/
 dist-digital-human-check/
 dist-ui-design-check/
 dist-ui-preview/
+
+# Large files / model weights
+LiveTalking/
+outputs/
+output/
+*.pth
+*.zip
+
+# Temp / runtime
+tmp/
+*.log
+.idea/

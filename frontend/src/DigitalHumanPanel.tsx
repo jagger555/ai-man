@@ -86,6 +86,7 @@ export function DigitalHumanPanel({
   const pendingAnswerRef = useRef<{ key: string; text: string } | null>(null);
   const autoAttemptedAnswerKeyRef = useRef("");
   const spokenAnswerKeyRef = useRef("");
+  const loadingPromptSentRef = useRef(false);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -148,6 +149,24 @@ export function DigitalHumanPanel({
     };
     void flushPendingAnswer();
   }, [latestAnswer, latestAnswerKey, connectionState, sessionId, isSpeaking]);
+
+  useEffect(() => {
+    if (!isAnswerLoading) {
+      loadingPromptSentRef.current = false;
+      return;
+    }
+    if (
+      loadingPromptSentRef.current ||
+      connectionState !== "connected" ||
+      !sessionId ||
+      isSpeaking
+    ) {
+      return;
+    }
+
+    loadingPromptSentRef.current = true;
+    void speakText("好的，我马上为您讲解。");
+  }, [isAnswerLoading, connectionState, sessionId, isSpeaking]);
 
   async function loadConfigAndConnect(signal?: AbortSignal) {
     try {

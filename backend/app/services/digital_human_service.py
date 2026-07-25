@@ -5,6 +5,7 @@ import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException, UploadFile
@@ -31,10 +32,16 @@ def list_local_avatars() -> dict[str, Any]:
                 continue
             full_image_count = _count_files(avatar_path / "full_imgs")
             face_image_count = _count_files(avatar_path / "face_imgs")
+            preview_path = _find_avatar_preview(avatar_path)
             avatars.append(
                 {
                     "avatar_id": avatar_path.name,
                     "path": str(avatar_path),
+                    "preview_url": (
+                        f"/api/digital-human/avatars/{quote(avatar_path.name, safe='')}/preview"
+                        if preview_path
+                        else ""
+                    ),
                     "selected": avatar_path.name == current_avatar,
                     "ready": (avatar_path / "coords.pkl").exists()
                     and full_image_count > 0
@@ -49,6 +56,14 @@ def list_local_avatars() -> dict[str, Any]:
         "current_avatar": current_avatar,
         "avatars": avatars,
     }
+
+
+def get_local_avatar_preview(avatar_id: str) -> Path:
+    avatar_path = _resolve_local_avatar_path(avatar_id)
+    preview_path = _find_avatar_preview(avatar_path)
+    if preview_path is None:
+        raise HTTPException(status_code=404, detail="Avatar preview image not found")
+    return preview_path
 
 
 def select_local_avatar(avatar_id: str) -> dict[str, Any]:
@@ -67,6 +82,34 @@ def select_local_avatar(avatar_id: str) -> dict[str, Any]:
         "selected_avatar": normalized_avatar_id,
         "config": _serialize_config(get_effective_digital_human_config()),
     }
+
+
+def _resolve_local_avatar_path(avatar_id: str) -> Path:
+    normalized_avatar_id = avatar_id.strip()
+    if (
+        not normalized_avatar_id
+        or Path(normalized_avatar_id).name != normalized_avatar_id
+        or normalized_avatar_id in {".", ".."}
+    ):
+        raise HTTPException(status_code=400, detail="Invalid avatar_id")
+
+    avatar_dir = resolve_avatar_dir().resolve()
+    avatar_path = (avatar_dir / normalized_avatar_id).resolve()
+    if avatar_path.parent != avatar_dir or not avatar_path.is_dir():
+        raise HTTPException(status_code=404, detail="Avatar directory not found")
+    return avatar_path
+
+
+def _find_avatar_preview(avatar_path: Path) -> Path | None:
+    image_extensions = {".png", ".jpg", ".jpeg", ".webp"}
+    for directory_name in ("full_imgs", "face_imgs"):
+        image_dir = avatar_path / directory_name
+        if not image_dir.is_dir():
+            continue
+        for image_path in sorted(image_dir.iterdir(), key=lambda item: item.name.lower()):
+            if image_path.is_file() and image_path.suffix.lower() in image_extensions:
+                return image_path
+    return None
 
 
 async def create_avatar_task(

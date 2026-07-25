@@ -19,10 +19,12 @@ type AMapNamespace = {
   Geolocation?: new (options: Record<string, unknown>) => AMapGeolocation;
   TileLayer: AMapTileLayerFactory;
   Buildings: new (options?: Record<string, unknown>) => unknown;
+  Polyline: new (options: Record<string, unknown>) => AMapOverlay;
   plugin: (plugins: string | string[], callback: () => void) => void;
 };
 
 type AMapLayer = unknown;
+type AMapOverlay = unknown;
 type AMapTileLayerFactory = (new (options?: Record<string, unknown>) => AMapLayer) & {
   Satellite: new (options?: Record<string, unknown>) => AMapLayer;
   RoadNet: new (options?: Record<string, unknown>) => AMapLayer;
@@ -35,12 +37,27 @@ type AMapMap = {
   setMapStyle: (style: string) => void;
   destroy: () => void;
   addControl: (control: unknown) => void;
+  add: (overlay: AMapOverlay | AMapOverlay[]) => void;
+  remove: (overlay: AMapOverlay | AMapOverlay[]) => void;
+  setFitView: (
+    overlays?: AMapOverlay[],
+    immediately?: boolean,
+    avoid?: [number, number, number, number],
+    maxZoom?: number,
+  ) => void;
 };
 type AMapWalking = {
-  search: (
-    points: Array<{ keyword: string; city: string }>,
-    callback: (status: string, result: unknown) => void,
-  ) => void;
+  search: {
+    (
+      points: Array<{ keyword: string; city: string }>,
+      callback: (status: string, result: unknown) => void,
+    ): void;
+    (
+      origin: [number, number],
+      destination: [number, number],
+      callback: (status: string, result: unknown) => void,
+    ): void;
+  };
   clear?: () => void;
 };
 type AMapAutoComplete = {
@@ -61,6 +78,7 @@ type AMapTip = {
   address?: string;
   adcode?: string;
   aliases?: string[];
+  location?: string | [number, number] | { lng?: number; lat?: number };
 };
 
 type ScenicRoute = {
@@ -69,6 +87,20 @@ type ScenicRoute = {
   helper: string;
   stops: string[];
   notes: string[];
+};
+
+type WalkingRouteStep = {
+  instruction: string;
+  distance: number;
+  duration: number;
+  polyline: [number, number][];
+};
+
+type WalkingRouteResponse = {
+  distance: number;
+  duration: number;
+  polyline: [number, number][];
+  steps: WalkingRouteStep[];
 };
 
 type AmapDisplayMode = "standard" | "satellite" | "three" | "street";
@@ -83,57 +115,73 @@ const LOCAL_NAVIGATION_SUGGESTIONS: AMapTip[] = [
     id: "local-lingshan-scenic",
     name: "灵山胜境",
     district: "江苏省无锡市滨湖区",
-    address: "马山灵山路灵山胜境景区",
+    address: "马山镇古竹路18号",
+    adcode: "320211",
+    location: [120.100925, 31.42592],
     aliases: ["灵山", "景区", "灵山景区"],
   },
   {
     id: "local-lingshan-buddha",
-    name: "灵山大佛",
+    name: "灵山胜境-灵山大佛",
     district: "江苏省无锡市滨湖区",
-    address: "马山灵山胜境景区内",
-    aliases: ["灵山", "大佛"],
+    address: "马山街道灵山路1号",
+    adcode: "320211",
+    location: [120.096477, 31.430194],
+    aliases: ["灵山", "大佛", "灵山大佛"],
   },
   {
     id: "local-jiulong",
     name: "九龙灌浴",
     district: "江苏省无锡市滨湖区",
     address: "马山灵山胜境景区内",
+    adcode: "320211",
+    location: [120.099984, 31.424601],
     aliases: ["九龙", "九龙灌浴广场"],
   },
   {
     id: "local-fangong",
-    name: "梵宫",
+    name: "灵山胜境-灵山梵宫",
     district: "江苏省无锡市滨湖区",
-    address: "马山灵山胜境景区内",
-    aliases: ["梵宫广场", "灵山梵宫"],
+    address: "马山镇灵山路1号灵山胜境东北角",
+    adcode: "320211",
+    location: [120.10242, 31.428218],
+    aliases: ["梵宫", "梵宫广场", "灵山梵宫"],
   },
   {
     id: "local-xiangfu",
-    name: "祥符禅寺",
+    name: "灵山胜境-祥符禅寺",
     district: "江苏省无锡市滨湖区",
     address: "马山灵山胜境景区内",
-    aliases: ["禅寺", "祥符寺"],
+    adcode: "320211",
+    location: [120.098012, 31.427949],
+    aliases: ["祥符禅寺", "禅寺", "祥符寺"],
   },
   {
     id: "local-fozutan",
-    name: "佛足坛",
+    name: "灵山胜境-佛足坛",
     district: "江苏省无锡市滨湖区",
     address: "马山灵山胜境景区内",
-    aliases: ["佛足", "佛足步"],
+    adcode: "320211",
+    location: [120.101497, 31.422725],
+    aliases: ["佛足坛", "佛足", "佛足步道"],
   },
   {
     id: "local-wuyin",
     name: "五印坛城",
     district: "江苏省无锡市滨湖区",
     address: "马山灵山胜境景区内",
+    adcode: "320211",
+    location: [120.103054, 31.424676],
     aliases: ["五印", "坛城"],
   },
   {
     id: "local-tourist-center",
-    name: "游客中心",
+    name: "灵山胜境游客中心",
     district: "江苏省无锡市滨湖区",
-    address: "马山灵山胜境景区游客服务区",
-    aliases: ["服务中心", "游客服务中心"],
+    address: "马山古竹路1号停车场内",
+    adcode: "320211",
+    location: [120.103651, 31.420196],
+    aliases: ["游客中心", "服务中心", "游客服务中心"],
   },
 ];
 
@@ -274,6 +322,42 @@ function getRouteKeyword(input: string, tip: AMapTip | null) {
     .join(" ");
 }
 
+function findLocalTip(input: string) {
+  const normalizedInput = input.trim().toLowerCase();
+  if (!normalizedInput) {
+    return null;
+  }
+
+  return (
+    LOCAL_NAVIGATION_SUGGESTIONS.find((tip) =>
+      [tip.name, ...(tip.aliases ?? [])]
+        .filter((item): item is string => typeof item === "string")
+        .some((item) => item.trim().toLowerCase() === normalizedInput),
+    ) ?? null
+  );
+}
+
+function getTipCoordinate(tip: AMapTip | null): [number, number] | null {
+  const location = tip?.location;
+  if (!location) {
+    return null;
+  }
+
+  if (Array.isArray(location)) {
+    const [lng, lat] = location;
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+  }
+
+  if (typeof location === "string") {
+    const [lng, lat] = location.split(",").map(Number);
+    return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+  }
+
+  return Number.isFinite(location.lng) && Number.isFinite(location.lat)
+    ? [location.lng as number, location.lat as number]
+    : null;
+}
+
 export function ScenicMapPanel({
   defaultMode,
   onNarrationChange,
@@ -297,6 +381,7 @@ export function ScenicMapPanel({
   const [routePlanStatus, setRoutePlanStatus] = useState(
     "输入起点和终点后，可在高德地图中规划步行路线。",
   );
+  const [routeSteps, setRouteSteps] = useState<WalkingRouteStep[]>([]);
   const [suggestionStatus, setSuggestionStatus] = useState("输入两个字以上可查看高德地点联想。");
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const routePanelRef = useRef<HTMLDivElement | null>(null);
@@ -304,6 +389,7 @@ export function ScenicMapPanel({
   const endInputRef = useRef<HTMLInputElement | null>(null);
   const mapRef = useRef<AMapMap | null>(null);
   const walkingRef = useRef<AMapWalking | null>(null);
+  const routePolylineRef = useRef<AMapOverlay | null>(null);
   const startAutoCompleteRef = useRef<AMapAutoComplete | null>(null);
   const endAutoCompleteRef = useRef<AMapAutoComplete | null>(null);
   const startSuggestionSeqRef = useRef(0);
@@ -498,6 +584,10 @@ export function ScenicMapPanel({
       disposed = true;
       walkingRef.current?.clear?.();
       walkingRef.current = null;
+      if (routePolylineRef.current && mapRef.current) {
+        mapRef.current.remove(routePolylineRef.current);
+      }
+      routePolylineRef.current = null;
       mapRef.current?.destroy();
       mapRef.current = null;
     };
@@ -559,8 +649,10 @@ export function ScenicMapPanel({
   }
 
   async function planWalkingRoute() {
-    const startKeyword = getRouteKeyword(routeStart, selectedStartTip);
-    const endKeyword = getRouteKeyword(routeEnd, selectedEndTip);
+    const startTip = selectedStartTip ?? findLocalTip(routeStart);
+    const endTip = selectedEndTip ?? findLocalTip(routeEnd);
+    const startKeyword = getRouteKeyword(routeStart, startTip);
+    const endKeyword = getRouteKeyword(routeEnd, endTip);
     if (!startKeyword || !endKeyword) {
       setRoutePlanStatus("请先输入起点和终点。");
       return;
@@ -572,30 +664,86 @@ export function ScenicMapPanel({
     }
 
     try {
+      walkingRef.current?.clear?.();
+      walkingRef.current = null;
+      if (routePolylineRef.current) {
+        mapRef.current.remove(routePolylineRef.current);
+        routePolylineRef.current = null;
+      }
+      setRouteSteps([]);
+      setRoutePlanStatus(`正在规划：${startKeyword} → ${endKeyword}`);
+      const startCoordinate = getTipCoordinate(startTip);
+      const endCoordinate = getTipCoordinate(endTip);
+      if (startCoordinate && endCoordinate) {
+        const AMap = await loadAmapScript();
+        const response = await fetch("/api/navigation/walking", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin: { lng: startCoordinate[0], lat: startCoordinate[1] },
+            destination: { lng: endCoordinate[0], lat: endCoordinate[1] },
+          }),
+        });
+        if (!response.ok) {
+          const errorPayload = (await response.json().catch(() => null)) as { detail?: string } | null;
+          throw new Error(errorPayload?.detail || "路线服务暂时不可用");
+        }
+
+        const route = (await response.json()) as WalkingRouteResponse;
+        if (!Array.isArray(route.polyline) || route.polyline.length < 2) {
+          throw new Error("高德未返回可绘制的步行路线");
+        }
+        const polyline = new AMap.Polyline({
+          path: route.polyline,
+          strokeColor: "#167a6a",
+          strokeWeight: 7,
+          strokeOpacity: 0.9,
+          lineJoin: "round",
+          lineCap: "round",
+          showDir: true,
+        });
+        mapRef.current.add(polyline);
+        mapRef.current.setFitView([polyline], false, [56, 56, 56, 56], 17);
+        routePolylineRef.current = polyline;
+        setRouteSteps(route.steps ?? []);
+        const minutes = Math.max(1, Math.round((route.duration || 0) / 60));
+        setRoutePlanStatus(
+          `已规划：${routeStart.trim()} → ${routeEnd.trim()}，约 ${route.distance} 米 / ${minutes} 分钟。`,
+        );
+        return;
+      }
+
       const AMap = await loadAmapPlugin("AMap.Walking");
       if (!AMap.Walking || !mapRef.current) {
         setRoutePlanStatus("步行路线规划组件尚未加载完成。");
         return;
       }
-
-      walkingRef.current?.clear?.();
       walkingRef.current = new AMap.Walking({
         map: mapRef.current,
         panel: routePanelRef.current ?? undefined,
       });
-      setRoutePlanStatus(`正在规划：${startKeyword} → ${endKeyword}`);
+      const handleRouteResult = (status: string, result: unknown) => {
+        if (status === "complete") {
+          setRoutePlanStatus(`已规划：${routeStart.trim()} → ${routeEnd.trim()}`);
+          return;
+        }
+
+        const info =
+          typeof result === "string"
+            ? result
+            : typeof result === "object" && result && "info" in result
+              ? String((result as { info?: unknown }).info ?? "")
+              : "";
+        setRoutePlanStatus(
+          `路线规划失败${info ? `（${info}）` : ""}，请从地点候选中选择准确地点后重试。`,
+        );
+      };
       walkingRef.current.search(
         [
-          { keyword: startKeyword, city: selectedStartTip?.adcode || ROUTE_CITY },
-          { keyword: endKeyword, city: selectedEndTip?.adcode || ROUTE_CITY },
+          { keyword: startKeyword, city: startTip?.adcode || ROUTE_CITY },
+          { keyword: endKeyword, city: endTip?.adcode || ROUTE_CITY },
         ],
-        (status) => {
-          setRoutePlanStatus(
-            status === "complete"
-              ? `已规划：${startKeyword} → ${endKeyword}`
-              : "路线规划失败，请尝试补充更完整的地点名称，例如“灵山胜境游客中心”。",
-          );
-        },
+        handleRouteResult,
       );
     } catch (error) {
       setRoutePlanStatus(error instanceof Error ? error.message : "路线规划组件加载失败");
@@ -666,6 +814,7 @@ export function ScenicMapPanel({
       routeEndSuggestions={endSuggestions}
       routePanelRef={routePanelRef}
       routePlanStatus={routePlanStatus}
+      routeSteps={routeSteps}
       routeStart={routeStart}
       routeStartSuggestions={startSuggestions}
       endInputRef={endInputRef}
@@ -760,6 +909,7 @@ function AmapNavigationView({
   routeEndSuggestions,
   routePanelRef,
   routePlanStatus,
+  routeSteps,
   routeStart,
   routeStartSuggestions,
   endInputRef,
@@ -783,6 +933,7 @@ function AmapNavigationView({
   routeEndSuggestions: AMapTip[];
   routePanelRef: RefObject<HTMLDivElement | null>;
   routePlanStatus: string;
+  routeSteps: WalkingRouteStep[];
   routeStart: string;
   routeStartSuggestions: AMapTip[];
   endInputRef: RefObject<HTMLInputElement | null>;
@@ -916,7 +1067,18 @@ function AmapNavigationView({
       <section className="amap-route-panel" aria-label="路线规划结果">
         <strong>路线详情</strong>
         <div ref={routePanelRef} className="amap-route-result">
-          <p>规划成功后，这里会显示高德返回的步行路线步骤。</p>
+          {routeSteps.length > 0 ? (
+            <ol>
+              {routeSteps.map((step, index) => (
+                <li key={`${step.instruction}-${index}`}>
+                  <span>{step.instruction}</span>
+                  <small>{step.distance > 0 ? `${step.distance} 米` : ""}</small>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>规划成功后，这里会显示高德返回的步行路线步骤。</p>
+          )}
         </div>
       </section>
     </section>

@@ -28,6 +28,7 @@ const defaultAvatarForm = {
 export function AvatarManager({ onAvatarSelected }: AvatarManagerProps) {
   const [avatars, setAvatars] = useState<DigitalHumanAvatar[]>([]);
   const [currentAvatar, setCurrentAvatar] = useState("");
+  const [previewAvatarId, setPreviewAvatarId] = useState("");
   const [avatarDir, setAvatarDir] = useState("");
   const [tasks, setTasks] = useState<DigitalHumanAvatarTask[]>([]);
   const [form, setForm] = useState(defaultAvatarForm);
@@ -55,6 +56,18 @@ export function AvatarManager({ onAvatarSelected }: AvatarManagerProps) {
       setAvatars(payload.avatars);
       setCurrentAvatar(payload.current_avatar);
       setAvatarDir(payload.avatar_dir);
+      setPreviewAvatarId((current) => {
+        if (payload.avatars.some((avatar) => avatar.avatar_id === current)) {
+          return current;
+        }
+        return (
+          payload.avatars.find((avatar) => avatar.selected)?.avatar_id ||
+          payload.current_avatar ||
+          payload.avatars.find((avatar) => avatar.ready)?.avatar_id ||
+          payload.avatars[0]?.avatar_id ||
+          ""
+        );
+      });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "读取形象列表失败");
     } finally {
@@ -85,6 +98,7 @@ export function AvatarManager({ onAvatarSelected }: AvatarManagerProps) {
   }
 
   async function selectAvatar(avatar: DigitalHumanAvatar) {
+    setPreviewAvatarId(avatar.avatar_id);
     setSaving(true);
     setError("");
     setNotice("");
@@ -108,6 +122,8 @@ export function AvatarManager({ onAvatarSelected }: AvatarManagerProps) {
       setSaving(false);
     }
   }
+
+  const previewAvatar = avatars.find((avatar) => avatar.avatar_id === previewAvatarId) ?? null;
 
   async function submitAvatarTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -194,35 +210,88 @@ export function AvatarManager({ onAvatarSelected }: AvatarManagerProps) {
             </button>
           </div>
 
-          <div className="avatar-list">
+          <div className="avatar-selection-workspace">
+          <div className="avatar-list" role="radiogroup" aria-label="选择数字人形象">
             {avatars.length > 0 ? (
               avatars.map((avatar) => (
-                <section
+                <article
                   key={avatar.avatar_id}
-                  className={avatar.selected ? "avatar-card selected" : "avatar-card"}
+                  className={`avatar-card${avatar.selected ? " selected" : ""}${
+                    avatar.avatar_id === previewAvatarId ? " previewing" : ""
+                  }`}
                 >
-                  <div>
-                    <strong>{avatar.avatar_id}</strong>
-                    <p>
-                      {avatar.ready ? "可用于连接" : "素材不完整"} · 全帧{" "}
-                      {avatar.full_image_count} · 人脸帧 {avatar.face_image_count}
-                    </p>
+                  <label className="avatar-choice">
+                    <input
+                      type="radio"
+                      name="avatar-preview"
+                      value={avatar.avatar_id}
+                      checked={avatar.avatar_id === previewAvatarId}
+                      onChange={() => setPreviewAvatarId(avatar.avatar_id)}
+                    />
+                    <span>
+                      <strong>{avatar.avatar_id}</strong>
+                      <p>
+                        {avatar.ready ? "素材完整，可用于连接" : "素材不完整"} · 全帧{" "}
+                        {avatar.full_image_count} · 人脸帧 {avatar.face_image_count}
+                      </p>
+                    </span>
+                  </label>
+                  <div className="avatar-card-actions">
+                    <span className={avatar.ready ? "avatar-ready-state ready" : "avatar-ready-state"}>
+                      {avatar.selected ? "当前使用" : avatar.ready ? "可切换" : "待补全"}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => void selectAvatar(avatar)}
+                      disabled={
+                        saving ||
+                        avatar.selected ||
+                        !avatar.ready ||
+                        avatar.avatar_id !== previewAvatarId
+                      }
+                    >
+                      {avatar.selected ? "使用中" : avatar.avatar_id === previewAvatarId ? "使用此形象" : "先预览"}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    onClick={() => void selectAvatar(avatar)}
-                    disabled={saving || avatar.selected || !avatar.ready}
-                  >
-                    {avatar.selected ? "使用中" : "切换"}
-                  </button>
-                </section>
+                </article>
               ))
             ) : (
               <div className="empty-state">
                 {loadingAvatars ? "正在扫描本地形象..." : "暂未发现可用 Avatar。"}
               </div>
             )}
+          </div>
+          <aside className="avatar-preview-card" aria-live="polite">
+            <div className="avatar-preview-head">
+              <div>
+                <span>当前预览</span>
+                <strong>{previewAvatar?.avatar_id || "尚未选择形象"}</strong>
+              </div>
+              {previewAvatar ? (
+                <span className={previewAvatar.selected ? "avatar-preview-status active" : "avatar-preview-status"}>
+                  {previewAvatar.selected ? "使用中" : "待确认"}
+                </span>
+              ) : null}
+            </div>
+            <div className="avatar-preview-media">
+              {previewAvatar?.preview_url ? (
+                <img src={previewAvatar.preview_url} alt={`数字人形象 ${previewAvatar.avatar_id} 的预览`} />
+              ) : (
+                <div className="avatar-preview-empty">
+                  <span>Avatar</span>
+                  <p>选择一个已生成形象后在此查看预览。</p>
+                </div>
+              )}
+            </div>
+            {previewAvatar ? (
+              <p className="avatar-preview-caption">
+                {previewAvatar.ready
+                  ? "确认形象效果后，点击“使用此形象”应用到游客端数字导游。"
+                  : "该形象的帧素材尚未完整，暂不可切换到游客端。"}
+              </p>
+            ) : null}
+          </aside>
           </div>
         </article>
 

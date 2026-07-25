@@ -10,6 +10,8 @@ from app.services.knowledge_service import (
     KnowledgeBase,
     KnowledgeDocument,
     KnowledgeDocumentStore,
+    _query_terms,
+    is_scenic_question,
 )
 
 
@@ -109,6 +111,33 @@ def test_search_prefers_route_chunk_for_route_question():
 
     assert results[0]["document_id"] == 1
     assert "route" in results[0]["question_categories"]
+
+
+def test_query_terms_exclude_single_cjk_characters_that_cause_false_matches():
+    terms = _query_terms("上海明天天气怎么样")
+
+    assert "天" not in terms
+    assert "气" not in terms
+
+
+def test_scenic_context_recognizes_registered_scenic_entities():
+    knowledge_base = KnowledgeBase.from_documents(
+        [
+            KnowledgeDocument(
+                id=1,
+                title="佛足坛",
+                category="faq",
+                content="佛足坛位于灵山胜境，是游客常见的游览点。",
+                source_name="manual",
+                status="active",
+                created_at="2026-01-01T00:00:00+00:00",
+                updated_at="2026-01-01T00:00:00+00:00",
+            )
+        ]
+    )
+
+    assert knowledge_base.chunk_count == 1
+    assert is_scenic_question("佛足坛有什么寓意？") is True
 
 
 def test_public_package_zip_docx_content_is_searchable(tmp_path: Path):

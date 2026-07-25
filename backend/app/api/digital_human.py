@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from app.services.digital_human_service import (
@@ -9,6 +9,7 @@ from app.services.digital_human_service import (
     delete_avatar_task,
     get_avatar_task,
     get_effective_digital_human_config,
+    get_local_avatar_preview,
     list_avatar_tasks,
     list_local_avatars,
     select_local_avatar,
@@ -44,6 +45,12 @@ def digital_human_avatars():
         list_local_avatars(),
         media_type="application/json; charset=utf-8",
     )
+
+
+@router.get("/avatars/{avatar_id}/preview")
+def digital_human_avatar_preview(avatar_id: str):
+    preview_path = get_local_avatar_preview(avatar_id)
+    return FileResponse(preview_path, content_disposition_type="inline")
 
 
 @router.post("/avatars/select")

@@ -60,6 +60,12 @@ class SpeechConfig:
     timeout: int
 
 
+@dataclass(frozen=True)
+class NavigationConfig:
+    amap_web_service_key: str
+    timeout: int
+
+
 def get_chat_config() -> ChatConfig:
     return ChatConfig(
         top_k=int(os.getenv("CHAT_TOP_K", "3")),
@@ -124,6 +130,13 @@ def get_speech_config() -> SpeechConfig:
         tts_response_format=os.getenv("BAILIAN_TTS_RESPONSE_FORMAT", os.getenv("SPEECH_TTS_RESPONSE_FORMAT", "pcm")),
         tts_sample_rate=int(os.getenv("BAILIAN_TTS_SAMPLE_RATE", os.getenv("SPEECH_TTS_SAMPLE_RATE", "24000"))),
         timeout=int(os.getenv("SPEECH_TIMEOUT", "30")),
+    )
+
+
+def get_navigation_config() -> NavigationConfig:
+    return NavigationConfig(
+        amap_web_service_key=os.getenv("AMAP_WEB_SERVICE_KEY", "").strip(),
+        timeout=int(os.getenv("AMAP_TIMEOUT", "15")),
     )
 
 

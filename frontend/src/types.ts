@@ -38,6 +38,7 @@ export type DigitalHumanConfig = {
 export type DigitalHumanAvatar = {
   avatar_id: string;
   path: string;
+  preview_url: string;
   selected: boolean;
   ready: boolean;
   full_image_count: number;

@@ -151,6 +151,27 @@ QUERY_CLASSIFIERS = {
 
 _SCENIC_TERMS: set[str] = set(BASE_SCENIC_TERMS)
 _JIEBA_LOADED_TERMS: set[str] = set()
+SCENIC_CONTEXT_MARKERS = {
+    "景区",
+    "景点",
+    "游客",
+    "游玩",
+    "游览",
+    "导游",
+    "导览",
+    "门票",
+    "入园",
+    "停车",
+    "缆车",
+    "观光车",
+    "摆渡车",
+    "卫生间",
+    "厕所",
+    "演出",
+    "表演",
+    "路线",
+    "怎么走",
+}
 
 
 @dataclass(frozen=True)
@@ -845,16 +866,28 @@ def _query_terms(query: str) -> set[str]:
         re.search(r"[a-z]", token) and re.search(r"\d", token)
         for token in raw_alnum_tokens
     ):
-        cjk_chars = {char for char in query if "\u4e00" <= char <= "\u9fff"}
-        return set(raw_alnum_tokens) | cjk_chars
+        return set(raw_alnum_tokens)
     words = {
         word.strip()
         for word in _cut_query(normalized_query)
         if word.strip() and not word.isspace()
     }
     words.update(raw_alnum_tokens)
-    cjk_chars = {char for char in query if "\u4e00" <= char <= "\u9fff"}
-    return words | cjk_chars
+    # Single CJK characters such as "天" and "写" occur in many unrelated
+    # documents. Including them turns incidental character overlap into a
+    # high-confidence retrieval result for out-of-domain questions.
+    return {word for word in words if len(word) > 1 or word.isascii()}
+
+
+def is_scenic_question(question: str) -> bool:
+    """Return whether a question is explicitly framed around the scenic area."""
+    normalized_question = question.lower()
+    return any(
+        marker in normalized_question for marker in SCENIC_CONTEXT_MARKERS
+    ) or any(
+        len(term) >= 2 and term.lower() in normalized_question
+        for term in _SCENIC_TERMS
+    )
 
 
 def _score(

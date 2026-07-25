@@ -91,6 +91,50 @@ def test_chat_endpoint_returns_low_confidence_for_unrelated_question(monkeypatch
     assert body["record_id"] >= 1
 
 
+def test_chat_endpoint_rejects_false_matches_for_unrelated_weather_and_code_questions(
+    monkeypatch,
+):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    _reset_knowledge_base_cache()
+    client = TestClient(app)
+
+    for question in ("上海明天天气怎么样？", "帮我写一段 Python 冒泡排序代码"):
+        response = client.post(
+            "/api/chat",
+            json={"session_id": "unrelated-question-session", "question": question},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reliable"] is False
+        assert body["confidence"] == 0.0
+        assert body["sources"] == []
+        assert body["model_provider"] == "retrieval_guard"
+
+
+def test_chat_endpoint_marks_static_matches_for_live_status_as_unreliable(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)
+    _reset_knowledge_base_cache()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/chat",
+        json={
+            "session_id": "live-status-session",
+            "question": "景区今天缆车是否临时停运？",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reliable"] is False
+    assert body["confidence"] == 0.0
+    assert body["sources"] == []
+    assert body["model_provider"] == "retrieval_guard"
+
+
 def test_chat_endpoint_uses_route_context_even_when_knowledge_retrieval_is_unreliable(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "mock")
     monkeypatch.delenv("AI_GUIDE_KNOWLEDGE_PACKAGE", raising=False)

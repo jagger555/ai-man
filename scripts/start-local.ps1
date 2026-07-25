@@ -425,7 +425,7 @@ if (Test-TcpPortOpen "127.0.0.1" $BackendPort) {
 }
 else {
     $backendLog = Join-Path $LogDir "backend.log"
-    $backendCommand = "`$env:DIGITAL_HUMAN_BASE_URL = $(Quote-PS $digitalHumanBaseUrl); `$env:DIGITAL_HUMAN_AVATAR = $(Quote-PS $LiveTalkingAvatarId); `$env:LIVETALKING_ROOT = $(Quote-PS $LiveTalkingPath); python -m uvicorn app.main:app --reload --host 127.0.0.1 --port $BackendPort 2>&1 | Tee-Object -FilePath $(Quote-PS $backendLog) -Append"
+    $backendCommand = "`$env:DIGITAL_HUMAN_BASE_URL = $(Quote-PS $digitalHumanBaseUrl); `$env:DIGITAL_HUMAN_AVATAR = $(Quote-PS $LiveTalkingAvatarId); `$env:LIVETALKING_ROOT = $(Quote-PS $LiveTalkingPath); python -m uvicorn app.main:app --host 127.0.0.1 --port $BackendPort 2>&1 | Tee-Object -FilePath $(Quote-PS $backendLog) -Append"
     $backendProcess = Start-ManagedProcess -Name "backend" -WorkingDirectory $BackendPath -Command $backendCommand
     $services += [pscustomobject]@{
         name = "backend"

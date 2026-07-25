@@ -421,14 +421,26 @@ function AnswerPreviewCard({
   response,
   servicePreview,
   isLoading,
-  isExpanded,
-  onToggleExpanded,
+  feedbackStatus,
+  feedbackText,
+  isFeedbackNoteOpen,
+  isSubmittingFeedback,
+  onFeedback,
+  onFeedbackTextChange,
+  onToggleFeedbackNote,
+  onSubmitFeedbackNote,
 }: {
   response: ChatResponse | null;
   servicePreview: GuideServiceEntry | null;
   isLoading: boolean;
-  isExpanded: boolean;
-  onToggleExpanded: () => void;
+  feedbackStatus: { recordId: number; rating: FeedbackRating } | null;
+  feedbackText: string;
+  isFeedbackNoteOpen: boolean;
+  isSubmittingFeedback: boolean;
+  onFeedback: (rating: FeedbackRating) => void;
+  onFeedbackTextChange: (value: string) => void;
+  onToggleFeedbackNote: () => void;
+  onSubmitFeedbackNote: () => void;
 }) {
   const hasAnswer = Boolean(response?.answer.trim());
   const hasServicePreview = !hasAnswer && !isLoading && Boolean(servicePreview);
@@ -458,7 +470,7 @@ function AnswerPreviewCard({
           </span>
         ) : null}
       </div>
-      <p className={isExpanded ? "answer-preview-text expanded" : "answer-preview-text"}>
+      <p className="answer-preview-text">
         {isLoading ? "数字导游正在结合景区资料整理适合现场播报的讲解内容。" : previewText}
       </p>
       {hasServicePreview ? (
@@ -467,19 +479,58 @@ function AnswerPreviewCard({
         </div>
       ) : null}
       <div className="answer-preview-footer">
-        <span>
-          {hasAnswer
-            ? "内容较长时可展开查看完整回答。"
-            : hasServicePreview
+        {hasAnswer && response?.record_id != null ? (
+          <div className="answer-feedback-inline" aria-label="回答反馈">
+            <span>这个回答对您有帮助吗？</span>
+            <div className="answer-feedback-actions">
+              <button
+                type="button"
+                className={feedbackStatus?.rating === "helpful" ? "active" : ""}
+                onClick={() => onFeedback("helpful")}
+                disabled={isSubmittingFeedback}
+              >
+                有帮助
+              </button>
+              <button
+                type="button"
+                className={feedbackStatus?.rating === "unhelpful" ? "active" : ""}
+                onClick={() => onFeedback("unhelpful")}
+                disabled={isSubmittingFeedback}
+              >
+                无帮助
+              </button>
+              <button type="button" className="text-action" onClick={onToggleFeedbackNote}>
+                补充意见
+              </button>
+            </div>
+            {feedbackStatus?.recordId === response.record_id ? <small>感谢您的反馈</small> : null}
+          </div>
+        ) : (
+          <span>
+            {hasServicePreview
               ? "服务入口将根据景区配置展示路线、定位、场次和服务点。"
               : "回答生成后，数字人会自动开始播报。"}
-        </span>
-        {hasAnswer ? (
-          <button type="button" className="text-action" onClick={onToggleExpanded}>
-            {isExpanded ? "收起详情" : "展开详情"}
-          </button>
-        ) : null}
+          </span>
+        )}
       </div>
+      {hasAnswer && isFeedbackNoteOpen ? (
+        <div className="answer-feedback-note">
+          <textarea
+            value={feedbackText}
+            onChange={(event) => onFeedbackTextChange(event.target.value)}
+            placeholder="可以补充说明回答哪里需要改进（选填）"
+            maxLength={500}
+          />
+          <button
+            type="button"
+            className="secondary-action"
+            onClick={onSubmitFeedbackNote}
+            disabled={!feedbackStatus || isSubmittingFeedback}
+          >
+            {feedbackStatus ? "提交意见" : "请先选择反馈"}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -566,7 +617,6 @@ export function App() {
     useState<AdminSection>("overview");
   const [adminTimeRange, setAdminTimeRange] = useState<"today" | "7d" | "30d">("7d");
   const [digitalHumanRefreshKey, setDigitalHumanRefreshKey] = useState(0);
-  const [isAnswerExpanded, setIsAnswerExpanded] = useState(false);
   const [activeGuideService, setActiveGuideService] =
     useState<GuideServiceEntry | null>(null);
   const [serviceNarration, setServiceNarration] = useState<{
@@ -747,10 +797,6 @@ export function App() {
   }, [response?.record_id, feedbackRecords]);
 
   useEffect(() => {
-    setIsAnswerExpanded(false);
-  }, [response?.record_id]);
-
-  useEffect(() => {
     return () => {
       asrClientRef.current?.close();
       stopCurrentAudio();
@@ -927,8 +973,12 @@ export function App() {
       setQuestion(trimmedQuestion);
     }
     setActiveGuideService(null);
+    setResponse(null);
     setIsLoading(true);
     setError("");
+    setFeedbackStatus(null);
+    setFeedbackText("");
+    setIsFeedbackNoteOpen(false);
 
     try {
       const result = await fetch("/api/chat", {
@@ -951,7 +1001,7 @@ export function App() {
       }
 
       setResponse((await result.json()) as ChatResponse);
-      await loadAdminData();
+      void loadAdminData();
     } catch (caught) {
       setError(caught instanceof Error ? (caught as Error).message : "问答请求失败");
     } finally {
@@ -965,7 +1015,6 @@ export function App() {
     setResponse(null);
     setServiceNarration(null);
     setError("");
-    setIsAnswerExpanded(false);
   }
 
   async function submitFeedback(rating: FeedbackRating) {
@@ -1362,8 +1411,18 @@ export function App() {
                 response={response}
                 servicePreview={activeGuideService}
                 isLoading={isLoading}
-                isExpanded={isAnswerExpanded}
-                onToggleExpanded={() => setIsAnswerExpanded((isExpanded) => !isExpanded)}
+                feedbackStatus={feedbackStatus}
+                feedbackText={feedbackText}
+                isFeedbackNoteOpen={isFeedbackNoteOpen}
+                isSubmittingFeedback={isSubmittingFeedback}
+                onFeedback={(rating) => void submitFeedback(rating)}
+                onFeedbackTextChange={setFeedbackText}
+                onToggleFeedbackNote={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
+                onSubmitFeedbackNote={() => {
+                  if (feedbackStatus) {
+                    void submitFeedback(feedbackStatus.rating);
+                  }
+                }}
               />
             </>
           ) : (

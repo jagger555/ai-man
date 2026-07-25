@@ -91,6 +91,14 @@ def test_avatar_list_and_select_updates_runtime_config(monkeypatch, tmp_path):
         "wav2lip256_avatar1",
     ]
     assert avatars_body["avatars"][0]["ready"] is True
+    assert avatars_body["avatars"][0]["preview_url"] == "/api/digital-human/avatars/626/preview"
+
+    preview_response = client.get(avatars_body["avatars"][0]["preview_url"])
+    assert preview_response.status_code == 200
+    assert preview_response.headers["content-type"] == "image/png"
+
+    missing_preview_response = client.get("/api/digital-human/avatars/does-not-exist/preview")
+    assert missing_preview_response.status_code == 404
 
     select_response = client.post(
         "/api/digital-human/avatars/select",

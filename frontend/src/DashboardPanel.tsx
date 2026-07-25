@@ -10,12 +10,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -112,19 +109,12 @@ function getBarHeight(value: number, maxValue: number): string {
   return `${Math.max(8, Math.round((value / maxValue) * 100))}%`;
 }
 
-const chartColors = ["#0e4a5a", "#2f7664", "#b98a45", "#e4c37a", "#6f8f86", "#a9664f"];
 const tooltipStyle = {
   border: "1px solid rgba(14, 74, 90, 0.14)",
   borderRadius: 10,
   background: "rgba(255, 252, 245, 0.98)",
   boxShadow: "0 12px 28px rgba(18, 44, 44, 0.12)",
 };
-
-function getEmojiLabel(value: string): string {
-  if (value === "mixed") return "组合 Emoji";
-  if (value === "other") return "其他 Emoji";
-  return value;
-}
 
 function getBarWidth(value: number, maxValue: number): string {
   if (maxValue <= 0) {
@@ -204,9 +194,6 @@ export function DashboardPanel({
   const weeklyTrend = dashboard?.service_trend ?? dashboard?.weekly_service_trend ?? [];
   const popularQuestions = dashboard?.popular_questions ?? [];
   const satisfactionTrend = dashboard?.satisfaction_trend ?? [];
-  const emojiDistribution = dashboard?.emoji_distribution ?? [];
-  const emojiTrend = dashboard?.emoji_trend ?? [];
-  const topicDistribution = dashboard?.topic_distribution ?? [];
   const visitorAnalytics = dashboard?.visitor_analytics ?? {};
   const ageGroups = visitorAnalytics.age_groups ?? [];
   const genderGroups = visitorAnalytics.gender_distribution ?? [];
@@ -476,75 +463,6 @@ export function DashboardPanel({
         ) : (
           <EmptyState />
         )}
-      </section>
-
-      <section className="dashboard-card operations-card interaction-card">
-        <div className="dashboard-card-head operations-card-head">
-          <div>
-            <strong>积极互动与咨询主题</strong>
-            <p>Emoji 仅代表积极互动；咨询主题来自真实问答，不参与情绪分类。</p>
-          </div>
-          <span>{periodLabel}</span>
-        </div>
-        <div className="trend-dashboard-grid interaction-chart-grid">
-          <div className="chart-panel">
-            <strong>积极 Emoji 分布</strong>
-            {emojiDistribution.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart accessibilityLayer>
-                  <Pie
-                    data={emojiDistribution.map((item) => ({ ...item, label: getEmojiLabel(item.emoji) }))}
-                    dataKey="count"
-                    nameKey="label"
-                    innerRadius={52}
-                    outerRadius={82}
-                    paddingAngle={3}
-                  >
-                    {emojiDistribution.map((item, index) => (
-                      <Cell key={`${item.emoji}-${index}`} fill={chartColors[index % chartColors.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState label="当前范围暂无 Emoji 互动" />
-            )}
-          </div>
-          <div className="chart-panel">
-            <strong>积极 Emoji 每日互动</strong>
-            {emojiTrend.some((item) => item.count > 0) ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={emojiTrend} accessibilityLayer>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
-                  <XAxis dataKey="date" tickFormatter={formatDateLabel} interval="preserveStartEnd" />
-                  <YAxis allowDecimals={false} width={32} />
-                  <Tooltip contentStyle={tooltipStyle} labelFormatter={(value) => formatDateLabel(String(value ?? ""))} />
-                  <Bar dataKey="count" name="Emoji 互动" fill="#b98a45" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState label="当前范围暂无 Emoji 互动" />
-            )}
-          </div>
-          <div className="chart-panel">
-            <strong>咨询主题排行</strong>
-            {topicDistribution.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={topicDistribution} layout="vertical" accessibilityLayer margin={{ left: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(14, 74, 90, 0.10)" />
-                  <XAxis type="number" allowDecimals={false} />
-                  <YAxis type="category" dataKey="topic" width={44} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="count" name="咨询量" fill="#0e4a5a" radius={[0, 6, 6, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState label="当前范围暂无问答主题" />
-            )}
-          </div>
-        </div>
       </section>
 
       <section className="dashboard-card operations-card qa-ranking-card">

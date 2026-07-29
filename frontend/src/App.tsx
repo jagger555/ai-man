@@ -49,6 +49,7 @@ import { StreamingAsrClient } from "./streamingAsrClient";
 import { ScenicMapPanel } from "./ScenicMapPanel";
 import { ScenicStatusHeader } from "./ScenicStatusHeader";
 import { PanoramaExperience } from "./PanoramaExperience";
+import { PerformancePage } from "./PerformancePage";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -188,9 +189,9 @@ const guideServiceEntries: GuideServiceEntry[] = [
   {
     id: "performance_time",
     title: "演出时间",
-    helper: "实时场次 / 演出地点",
-    summary: "可查看 2026 年 7 月灵山胜境演出场次通知，包含九龙灌浴和梵宫文化体验之旅。",
-    supports: ["九龙灌浴平日4场", "九龙灌浴周末5场", "梵宫文化体验之旅6场"],
+    helper: "当日场次 / 演出地点",
+    summary: "可查看有效期内的九龙灌浴与梵宫文化体验安排，过期后自动以景区当日公告为准。",
+    supports: ["九龙灌浴场次", "梵宫文化体验", "到场提醒", "过期自动降级"],
     icon: CalendarClock,
   },
   {
@@ -1075,6 +1076,16 @@ export function App() {
     void askQuestion(nextQuestion);
   }
 
+  function openPerformanceInMap(destination: string) {
+    setMapDestination(destination);
+    setActiveGuideService(guideServiceEntries.find((entry) => entry.id === "map_guide") ?? null);
+    navigateToVisitorPage("map");
+  }
+
+  function askAboutPerformance(title: string) {
+    void askQuestion(`请介绍${title}的主要看点，并提醒我具体场次应以景区当日公告为准。`);
+  }
+
   async function submitFeedback(rating: FeedbackRating) {
     if (response?.record_id == null) {
       return;
@@ -1530,6 +1541,13 @@ export function App() {
                 ) : visitorPage === "vr" ? (
                   <div className="visitor-feature-content vr-feature-content">
                     <PanoramaExperience />
+                  </div>
+                ) : visitorPage === "performance" ? (
+                  <div className="visitor-feature-content performance-feature-content">
+                    <PerformancePage
+                      onOpenMap={openPerformanceInMap}
+                      onAskPerformance={askAboutPerformance}
+                    />
                   </div>
                 ) : (
                   <div className="visitor-feature-placeholder">

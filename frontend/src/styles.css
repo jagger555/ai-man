@@ -4883,7 +4883,7 @@ textarea {
   line-height: 1.45;
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1279px) {
   .hero-header {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
@@ -6207,14 +6207,14 @@ textarea {
 
 /* Live scenic status hero */
 .scenic-live-header {
-  min-height: 164px;
+  min-height: 180px;
   grid-template-columns: auto minmax(280px, 0.72fr) minmax(570px, 1.28fr) auto;
   gap: clamp(14px, 1.5vw, 24px);
   overflow: hidden;
   padding: clamp(18px, 1.8vw, 28px);
   border-color: rgba(47, 118, 100, 0.18);
   background:
-    linear-gradient(90deg, rgba(255, 252, 245, 0.98) 0%, rgba(255, 250, 239, 0.95) 35%, rgba(237, 242, 230, 0.88) 100%),
+    linear-gradient(90deg, rgba(255, 252, 245, 0.98) 0%, rgba(255, 250, 239, 0.92) 34%, rgba(237, 242, 230, 0.74) 100%),
     url("./assets/lingshan-hero.png") 50% 42% / cover;
   box-shadow:
     0 26px 72px rgba(30, 73, 61, 0.13),
@@ -6273,6 +6273,39 @@ textarea {
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
+.live-board-heading {
+  grid-column: 1 / -1;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 14px 5px;
+  border-bottom: 1px solid rgba(255, 250, 240, 0.1);
+  color: rgba(255, 250, 240, 0.72);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.live-board-title,
+.live-board-refresh {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.live-board-title i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #74d7b0;
+  box-shadow: 0 0 0 5px rgba(116, 215, 176, 0.12);
+}
+
+.live-board-refresh {
+  color: rgba(255, 250, 240, 0.54);
+}
+
 .live-metric {
   min-width: 0;
   display: grid;
@@ -6312,27 +6345,31 @@ textarea {
   white-space: nowrap;
 }
 
-.metric-copy > .crowd-source-row {
+.metric-label-row {
+  min-width: 0;
   display: flex;
-  gap: 7px;
+  gap: 8px;
   align-items: center;
-  overflow: visible;
-  white-space: normal;
+  justify-content: space-between;
 }
 
-.demo-source-badge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  border: 1px solid rgba(244, 214, 143, 0.42);
-  border-radius: 999px;
-  padding: 2px 6px;
-  color: #f9dfa4;
-  background: rgba(244, 214, 143, 0.11);
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 900;
+.metric-label-row > span {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 250, 240, 0.72);
+  font-size: 11px;
+  font-weight: 800;
   letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-label-row > time {
+  flex: 0 0 auto;
+  color: rgba(255, 250, 240, 0.68);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .metric-value-row {
@@ -6449,7 +6486,7 @@ textarea {
   }
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1279px) {
   .scenic-guide-page:not(.admin-page) {
     height: auto;
     min-height: 100dvh;

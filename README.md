@@ -167,7 +167,10 @@ Copy-Item .\backend\.env.example .\backend\.env
 | --- | --- |
 | `LLM_PROVIDER`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL` | 大模型问答 |
 | `BAILIAN_*` | 百炼语音识别与合成 |
-| `AMAP_WEB_SERVICE_KEY` | 高德步行导航 |
+| `AMAP_WEB_SERVICE_KEY` | 高德步行导航与实时天气 |
+| `SCENIC_NAME`、`SCENIC_ADCODE` | 首页景区名称与高德天气行政区代码，默认灵山胜境/滨湖区 `320211` |
+| `SCENIC_WEATHER_TIMEOUT` | 天气接口独立超时，默认 2 秒，避免阻塞本地客流状态 |
+| `SCENIC_WEATHER_CACHE_SECONDS`、`SCENIC_WEATHER_MAX_STALE_SECONDS` | 实时天气缓存与最大陈旧时长，默认 600/3600 秒 |
 | `DIGITAL_HUMAN_BASE_URL`、`DIGITAL_HUMAN_AVATAR` | 数字人服务地址和形象 |
 
 默认知识库位于 `data/sample_scenic/knowledge.md` 与 `data/sample_scenic/official_facts.md`。问答记录数据库会自动创建在 `data/runtime/chat_records.db`。

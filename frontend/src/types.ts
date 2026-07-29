@@ -174,6 +174,53 @@ export type VisitorSentimentTrend = {
   negative_rate: number;
 };
 
+export type ScenicWeatherStatus = "live" | "cached" | "unavailable";
+
+export type ScenicStatusResponse = {
+  scenic_name: string;
+  opening: {
+    status: "open" | "upcoming" | "closed";
+    label: string;
+    hours: string;
+    source: string;
+  };
+  weather: {
+    status: ScenicWeatherStatus;
+    provider: string;
+    city: string;
+    adcode: string;
+    weather: string;
+    temperature: string | null;
+    wind_direction: string;
+    wind_power: string;
+    humidity: string | null;
+    report_time: string;
+    fetched_at: string | null;
+    age_seconds: number | null;
+    message: string;
+  };
+  crowd: {
+    source: "demo_simulation";
+    source_label: string;
+    current_inside: number;
+    today_entries: number;
+    today_exits: number;
+    comfort_level: "舒适" | "适中" | "较拥挤";
+    recommended_entrance: string | null;
+    entrances: Array<{
+      id: string;
+      name: string;
+      today_entries: number;
+      today_exits: number;
+      entries_last_5m: number;
+      exits_last_5m: number;
+      flow_level: "畅通" | "适中" | "繁忙";
+    }>;
+    updated_at: string;
+  };
+  updated_at: string;
+};
+
 export type VisitorFeedbackTrend = {
   date: string;
   question_count: number;

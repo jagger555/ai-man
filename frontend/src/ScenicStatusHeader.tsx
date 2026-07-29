@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CloudSun,
-  Clock3,
   Droplets,
   MapPin,
   RefreshCw,
@@ -12,7 +11,7 @@ import {
 import type { ActiveView, ScenicStatusResponse } from "./types";
 
 
-const STATUS_REFRESH_MS = 60_000;
+const STATUS_REFRESH_MS = 5_000;
 
 const scenicTags = ["国家 AAAAA 级景区", "佛教文化胜境", "太湖山水"];
 
@@ -85,7 +84,12 @@ export function ScenicStatusHeader({
   const activeRequestRef = useRef<AbortController | null>(null);
 
   const loadStatus = useCallback(async (showLoading = false) => {
-    activeRequestRef.current?.abort();
+    if (activeRequestRef.current) {
+      if (!showLoading) {
+        return;
+      }
+      activeRequestRef.current.abort();
+    }
     const controller = new AbortController();
     activeRequestRef.current = controller;
     if (showLoading) {
@@ -112,6 +116,7 @@ export function ScenicStatusHeader({
       setError(caught instanceof Error ? caught.message : "景区实时状态读取失败");
     } finally {
       if (activeRequestRef.current === controller) {
+        activeRequestRef.current = null;
         setIsLoading(false);
       }
     }
@@ -119,24 +124,33 @@ export function ScenicStatusHeader({
 
   useEffect(() => {
     void loadStatus(true);
-    const timer = window.setInterval(() => void loadStatus(false), STATUS_REFRESH_MS);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void loadStatus(false);
+      }
+    };
+    const timer = window.setInterval(refreshWhenVisible, STATUS_REFRESH_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearInterval(timer);
-      activeRequestRef.current?.abort();
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      const activeRequest = activeRequestRef.current;
+      activeRequestRef.current = null;
+      activeRequest?.abort();
     };
   }, [loadStatus]);
 
   const weatherMeta = useMemo(() => {
     if (!status) {
-      return isLoading ? "正在连接高德天气" : "实时天气暂不可用";
+      return isLoading ? "滨湖区 · 正在获取天气" : "滨湖区 · 天气暂不可用";
     }
     if (status.weather.status === "cached") {
-      return "高德天气 · 最近缓存";
+      return `${status.weather.city} · 最近一次天气`;
     }
     if (status.weather.status === "unavailable") {
-      return status.weather.message || "高德天气暂不可用";
+      return `${status.weather.city} · 天气暂不可用`;
     }
-    return `${status.weather.provider} · ${status.weather.city}`;
+    return `${status.weather.city} · ${status.weather.provider}`;
   }, [isLoading, status]);
 
   const hasInitialError = !status && Boolean(error);
@@ -147,6 +161,8 @@ export function ScenicStatusHeader({
   const weatherDescription = status?.weather.weather ?? (hasInitialError ? "暂不可用" : "读取中");
   const weatherUpdatedAt = formatUpdateTime(status?.weather.report_time ?? "");
   const crowdUpdatedAt = formatUpdateTime(status?.crowd.updated_at ?? "");
+  const recommendedEntrance = status?.crowd.recommended_entrance
+    ?? (status?.opening.status === "open" ? "计算中" : status ? "开放后更新" : "--");
   const statusMessage = hasInitialError
     ? error
     : isStale
@@ -168,7 +184,7 @@ export function ScenicStatusHeader({
       <div className="hero-copy">
         <p className="eyebrow">{status?.scenic_name ?? "灵山胜境"} · 智慧导览</p>
         <h1>灵山此刻，智慧随行</h1>
-        <p>天气、客流与数字人讲解汇聚在同一程旅途中。</p>
+        <p>一眼掌握天气与客流，从容开启灵山之旅。</p>
         <div className="tag-row" aria-label="景区标签">
           {scenicTags.map((tag) => (
             <span key={tag}>{tag}</span>
@@ -178,14 +194,27 @@ export function ScenicStatusHeader({
 
       <section
         className="scenic-live-board"
-        aria-label="景区实时天气与模拟客流参考"
+        aria-label="景区实时天气与客流状态"
       >
+        <header className="live-board-heading">
+          <span className="live-board-title"><i aria-hidden="true" /> 景区实时状态</span>
+          <span className="live-board-refresh">
+            <RefreshCw size={12} className={isLoading ? "spin" : ""} aria-hidden="true" />
+            每 5 秒更新
+          </span>
+        </header>
+
         <article className="live-metric weather-metric">
           <div className="metric-icon" aria-hidden="true">
             <CloudSun size={24} />
           </div>
           <div className="metric-copy">
-            <span>{weatherMeta}</span>
+            <div className="metric-label-row">
+              <span title={status?.weather.status === "cached" ? status.weather.message : undefined}>
+                {weatherMeta}
+              </span>
+              <time dateTime={status?.weather.report_time || undefined}>{weatherUpdatedAt} 更新</time>
+            </div>
             <div className="metric-value-row">
               <strong>{temperature}</strong>
               <b>{weatherDescription}</b>
@@ -202,25 +231,25 @@ export function ScenicStatusHeader({
             <Users size={24} />
           </div>
           <div className="metric-copy">
-            <span className="crowd-source-row">
-              模拟在园人数
-              <em className="demo-source-badge">演示模拟</em>
-            </span>
+            <div className="metric-label-row">
+              <span>当前在园人数</span>
+              <time dateTime={status?.crowd.updated_at || undefined}>{crowdUpdatedAt} 更新</time>
+            </div>
             <div className="metric-value-row">
               <strong>{formatCount(status?.crowd.current_inside)}</strong>
               <b>{status?.crowd.comfort_level ?? (hasInitialError ? "暂不可用" : "计算中")}</b>
             </div>
             <div className="metric-detail-row">
-              <span><MapPin size={13} /> 演示推荐入口 {status?.crowd.recommended_entrance ?? "--"}</span>
+              <span><MapPin size={13} /> 推荐入口 {recommendedEntrance}</span>
             </div>
           </div>
         </article>
 
         <footer className="live-board-footer">
           <span className={`opening-state ${status?.opening.status ?? "loading"}`}>
-            参考开放时段 {status?.opening.hours ?? "--"} · {status?.opening.source ?? "演示配置"}
+            {status?.opening.label ?? "开放时间读取中"} · {status?.opening.hours ?? "--"}
           </span>
-          <span><Clock3 size={13} /> 天气 {weatherUpdatedAt} · 客流 {crowdUpdatedAt} 更新</span>
+          <span>开放时间以景区当日公告为准</span>
           {statusMessage ? (
             <span className={`live-status-message ${isStale ? "stale" : "error"}`} role="status" aria-live="polite">
               {statusMessage}

@@ -180,9 +180,9 @@ const guideServiceEntries: GuideServiceEntry[] = [
   {
     id: "vr_guide",
     title: "VR 实景",
-    helper: "360° / 数字人讲解",
-    summary: "可在 Web 端直接进入灵山胜境 360° 全景，并按代表性看点联动数字人讲解。",
-    supports: ["360° 实景漫游", "全景内热点", "五个导览看点", "数字人同步讲解"],
+    helper: "360° / 自由漫游",
+    summary: "可在 Web 端直接进入灵山胜境 360° 全景，自由拖动视角并使用原页面场景热点。",
+    supports: ["360° 实景漫游", "原页面场景选择", "分享点赞与评论", "第三方原始语音"],
     icon: ScanLine,
   },
   {
@@ -1526,6 +1526,10 @@ export function App() {
                       immersive
                       onNarrationChange={setServiceNarration}
                     />
+                  </div>
+                ) : visitorPage === "vr" ? (
+                  <div className="visitor-feature-content vr-feature-content">
+                    <PanoramaExperience />
                   </div>
                 ) : (
                   <div className="visitor-feature-placeholder">

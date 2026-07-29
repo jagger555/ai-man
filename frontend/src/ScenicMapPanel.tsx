@@ -613,7 +613,7 @@ export function ScenicMapPanel({
       return;
     }
     const localTip = findLocalTip(destination);
-    invalidateRoute(`已从游览路线带入“${destination}”，请确认后规划步行路线。`);
+    invalidateRoute(`已带入目的地“${destination}”，请确认后规划步行路线。`);
     setRouteEnd(destination);
     setSelectedEndTip(localTip);
     setEndSuggestions([]);

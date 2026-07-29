@@ -21,6 +21,7 @@ type DigitalHumanPanelProps = {
   latestAnswerKey: string;
   isAnswerLoading: boolean;
   refreshKey?: number;
+  pipQuestionOpenRequest?: number;
   mode?: DigitalHumanDisplayMode;
   question?: string;
   isListening?: boolean;
@@ -111,6 +112,7 @@ export function DigitalHumanPanel({
   latestAnswerKey,
   isAnswerLoading,
   refreshKey = 0,
+  pipQuestionOpenRequest = 0,
   mode = "stage",
   question = "",
   isListening = false,
@@ -134,6 +136,7 @@ export function DigitalHumanPanel({
   const loadingPromptSentRef = useRef(false);
   const pipDragRef = useRef<PipDragState | null>(null);
   const pipAnchorRef = useRef<PipAnchor | null>(null);
+  const lastPipQuestionOpenRequestRef = useRef(pipQuestionOpenRequest);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -183,6 +186,17 @@ export function DigitalHumanPanel({
       window.removeEventListener("beforeunload", handlePageExit);
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      mode === "pip" &&
+      pipQuestionOpenRequest !== lastPipQuestionOpenRequestRef.current
+    ) {
+      setIsPipCollapsed(false);
+      setIsPipQuestionOpen(true);
+    }
+    lastPipQuestionOpenRequestRef.current = pipQuestionOpenRequest;
+  }, [mode, pipQuestionOpenRequest]);
 
   useEffect(() => {
     if (mode !== "pip") {

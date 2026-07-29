@@ -620,6 +620,7 @@ export function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [visitorPage, setVisitorPage] = useState<VisitorPage>(() => getVisitorPageFromLocation());
+  const [mapDestination, setMapDestination] = useState("");
   const [activeAdminSection, setActiveAdminSection] =
     useState<AdminSection>("overview");
   const [adminTimeRange, setAdminTimeRange] = useState<"today" | "7d" | "30d">("7d");
@@ -1041,6 +1042,9 @@ export function App() {
   function openGuideService(intent: GuideIntent) {
     const matchedEntry = guideServiceEntries.find((entry) => entry.id === intent) ?? null;
     const nextPage = visitorPageByGuideIntent[intent];
+    if (intent === "map_guide") {
+      setMapDestination("");
+    }
     setActiveGuideService(matchedEntry);
     setResponse(null);
     setServiceNarration(null);
@@ -1058,6 +1062,17 @@ export function App() {
       setServiceNarration(null);
     }
     window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function openRouteStopInMap(stop: string) {
+    setMapDestination(stop);
+    setActiveGuideService(guideServiceEntries.find((entry) => entry.id === "map_guide") ?? null);
+    navigateToVisitorPage("map");
+  }
+
+  function askAboutRouteStop(stop: string) {
+    const nextQuestion = `请介绍${stop}的参观重点，并提醒我游览时需要注意什么。`;
+    void askQuestion(nextQuestion);
   }
 
   async function submitFeedback(rating: FeedbackRating) {
@@ -1494,10 +1509,20 @@ export function App() {
                   <ArrowLeft size={17} aria-hidden="true" />
                   返回首页
                 </button>
-                {visitorPage === "map" ? (
+                {visitorPage === "route" ? (
+                  <div className="visitor-feature-content route-feature-content">
+                    <ScenicMapPanel
+                      defaultMode="route_guide"
+                      onNarrationChange={setServiceNarration}
+                      onOpenMapDestination={openRouteStopInMap}
+                      onAskRouteStop={askAboutRouteStop}
+                    />
+                  </div>
+                ) : visitorPage === "map" ? (
                   <div className="visitor-feature-content map-feature-content">
                     <ScenicMapPanel
                       defaultMode="map_guide"
+                      initialDestination={mapDestination}
                       immersive
                       onNarrationChange={setServiceNarration}
                     />

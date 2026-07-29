@@ -8521,6 +8521,195 @@ textarea {
   }
 }
 
+.services-feature-content {
+  background:
+    radial-gradient(circle at 82% 12%, rgba(214, 170, 79, 0.14), transparent 25%),
+    radial-gradient(circle at 10% 84%, rgba(47, 118, 100, 0.12), transparent 30%),
+    linear-gradient(145deg, #f7f4ea, #e7f1eb);
+}
+
+.visitor-services-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  overflow: hidden;
+  padding: 74px 280px 18px 18px;
+}
+
+.visitor-services-head {
+  min-height: 72px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(36, 96, 79, 0.12);
+  border-radius: 20px 7px 20px 7px;
+  padding: 12px 18px;
+  background: rgba(255, 253, 247, 0.86);
+  box-shadow: 0 13px 30px rgba(22, 65, 53, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.visitor-services-head .eyebrow {
+  margin: 0 0 3px;
+  color: #ae7b2b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+}
+
+.visitor-services-head h1 {
+  margin: 0;
+  color: #173f35;
+  font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  font-size: clamp(24px, 2vw, 30px);
+  line-height: 1.1;
+}
+
+.visitor-services-head > p {
+  max-width: 500px;
+  margin: 0;
+  color: #61766d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.visitor-service-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.visitor-service-card {
+  --service-accent: #2f7664;
+  --service-soft: #dceee7;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 18%, transparent);
+  border-radius: 22px 7px 22px 7px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--service-soft) 72%, transparent), transparent 46%),
+    rgba(255, 253, 247, 0.94);
+  box-shadow: 0 15px 34px rgba(21, 64, 53, 0.09);
+}
+
+.visitor-service-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 72px;
+  height: 5px;
+  border-radius: 0 0 0 8px;
+  background: var(--service-accent);
+  opacity: 0.72;
+}
+
+.visitor-service-card.is-amber { --service-accent: #b17728; --service-soft: #f3e2bd; }
+.visitor-service-card.is-blue { --service-accent: #39728c; --service-soft: #d7e8ef; }
+.visitor-service-card.is-teal { --service-accent: #237d78; --service-soft: #d2ece8; }
+.visitor-service-card.is-red { --service-accent: #a9564d; --service-soft: #f2dbd6; }
+.visitor-service-card.is-violet { --service-accent: #75639b; --service-soft: #e5def0; }
+.visitor-service-card.is-rose { --service-accent: #a95d75; --service-soft: #f1dde5; }
+.visitor-service-card.is-gold { --service-accent: #9b7a2f; --service-soft: #efe4c2; }
+
+.visitor-service-icon {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px 5px 16px 5px;
+  color: var(--service-accent);
+  background: var(--service-soft);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.64);
+}
+
+.visitor-service-copy {
+  min-height: 0;
+}
+
+.visitor-service-copy h2 {
+  margin: 0 0 5px;
+  color: #23453b;
+  font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.visitor-service-copy p {
+  margin: 0;
+  color: #64786f;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.visitor-service-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.visitor-service-actions button {
+  min-width: 0;
+  min-height: 35px;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--service-accent) 18%, transparent);
+  border-radius: 10px 4px 10px 4px;
+  padding: 7px 6px;
+  color: var(--service-accent);
+  background: color-mix(in srgb, var(--service-soft) 62%, white);
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.visitor-service-actions button:last-child {
+  color: #fff;
+  background: var(--service-accent);
+}
+
+.visitor-service-actions button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 16px color-mix(in srgb, var(--service-accent) 15%, transparent);
+}
+
+@media (max-height: 760px) {
+  .visitor-services-page {
+    gap: 10px;
+    padding-top: 68px;
+  }
+
+  .visitor-services-head {
+    min-height: 60px;
+    padding-block: 8px;
+  }
+
+  .visitor-service-card {
+    gap: 7px;
+    padding: 12px;
+  }
+
+  .visitor-service-icon {
+    width: 42px;
+    height: 42px;
+  }
+}
+
 .map-feature-content .amap-product-panel {
   height: 100%;
   min-height: 0;

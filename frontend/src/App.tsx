@@ -50,6 +50,7 @@ import { ScenicMapPanel } from "./ScenicMapPanel";
 import { ScenicStatusHeader } from "./ScenicStatusHeader";
 import { PanoramaExperience } from "./PanoramaExperience";
 import { PerformancePage } from "./PerformancePage";
+import { VisitorServicesPage } from "./VisitorServicesPage";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -622,6 +623,7 @@ export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [visitorPage, setVisitorPage] = useState<VisitorPage>(() => getVisitorPageFromLocation());
   const [mapDestination, setMapDestination] = useState("");
+  const [pipQuestionOpenRequest, setPipQuestionOpenRequest] = useState(0);
   const [activeAdminSection, setActiveAdminSection] =
     useState<AdminSection>("overview");
   const [adminTimeRange, setAdminTimeRange] = useState<"today" | "7d" | "30d">("7d");
@@ -1086,6 +1088,17 @@ export function App() {
     void askQuestion(`请介绍${title}的主要看点，并提醒我具体场次应以景区当日公告为准。`);
   }
 
+  function findVisitorService(searchTerm: string) {
+    setMapDestination(searchTerm);
+    setActiveGuideService(guideServiceEntries.find((entry) => entry.id === "map_guide") ?? null);
+    navigateToVisitorPage("map");
+  }
+
+  function consultVisitorService(title: string) {
+    setQuestion(`请告诉我如何查找景区内的${title}服务，具体位置以现场标识为准。`);
+    setPipQuestionOpenRequest((request) => request + 1);
+  }
+
   async function submitFeedback(rating: FeedbackRating) {
     if (response?.record_id == null) {
       return;
@@ -1453,6 +1466,7 @@ export function App() {
             }
             isAnswerLoading={isLoading}
             refreshKey={digitalHumanRefreshKey}
+            pipQuestionOpenRequest={pipQuestionOpenRequest}
             mode={isVisitorHome ? "stage" : "pip"}
             question={question}
             isListening={isListening}
@@ -1547,6 +1561,13 @@ export function App() {
                     <PerformancePage
                       onOpenMap={openPerformanceInMap}
                       onAskPerformance={askAboutPerformance}
+                    />
+                  </div>
+                ) : visitorPage === "services" ? (
+                  <div className="visitor-feature-content services-feature-content">
+                    <VisitorServicesPage
+                      onFindNearest={findVisitorService}
+                      onConsult={consultVisitorService}
                     />
                   </div>
                 ) : (

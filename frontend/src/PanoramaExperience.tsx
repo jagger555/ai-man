@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, RefreshCw, ScanLine } from "lucide-react";
+import { RefreshCw, ScanLine } from "lucide-react";
 
 const PANORAMA_URL = "https://www.720yun.com/t/1f2jrOmfkm0";
 
@@ -38,16 +38,6 @@ export function PanoramaExperience() {
         onLoad={() => setViewerState("ready")}
         onError={() => setViewerState("error")}
       />
-
-      <nav className="vr-source-actions" aria-label="全景素材操作">
-        <a href={PANORAMA_URL} target="_blank" rel="noreferrer">
-          素材来源：720 云 · 听游天下
-        </a>
-        <a href={PANORAMA_URL} target="_blank" rel="noreferrer">
-          <ExternalLink size={14} aria-hidden="true" />
-          打开原页面
-        </a>
-      </nav>
 
       {viewerState !== "ready" ? (
         <div

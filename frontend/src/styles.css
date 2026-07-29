@@ -8151,40 +8151,6 @@ textarea {
   background: #071612;
 }
 
-.vr-source-actions {
-  position: absolute;
-  z-index: 40;
-  top: 18px;
-  left: 148px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.vr-source-actions a {
-  min-height: 42px;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  border-radius: 12px 5px 12px 5px;
-  padding: 8px 12px;
-  color: #fffdf7;
-  background: rgba(18, 72, 59, 0.82);
-  box-shadow: 0 12px 30px rgba(5, 29, 23, 0.25);
-  font-size: 11px;
-  font-weight: 900;
-  text-decoration: none;
-  backdrop-filter: blur(14px);
-}
-
-.vr-source-actions a:hover,
-.vr-source-actions a:focus-visible {
-  outline: none;
-  border-color: rgba(246, 218, 148, 0.72);
-  background: rgba(18, 72, 59, 0.95);
-}
-
 .vr-panorama-state {
   position: absolute;
   z-index: 35;

@@ -8,10 +8,12 @@ import {
   Layers3,
   LocateFixed,
   MapPin,
+  MessageCircleQuestion,
   Navigation,
   PanelLeftOpen,
   Route,
   Sparkles,
+  UsersRound,
   X,
 } from "lucide-react";
 import scenicMapImage from "./assets/lingshan-map.png";
@@ -93,8 +95,17 @@ type ScenicRoute = {
   id: string;
   name: string;
   helper: string;
+  duration: string;
+  audience: string;
+  pace: string;
+  summary: string;
   stops: string[];
   notes: string[];
+};
+
+type RouteMapPoint = {
+  x: number;
+  y: number;
 };
 
 type WalkingRouteStep = {
@@ -137,6 +148,15 @@ const LOCAL_NAVIGATION_SUGGESTIONS: AMapTip[] = [
     aliases: ["灵山", "景区", "灵山景区"],
   },
   {
+    id: "local-ticket-gate",
+    name: "灵山胜境售票处",
+    district: "江苏省无锡市滨湖区",
+    address: "新龙路与群灵路交叉路口北侧（灵山胜境）",
+    adcode: "320211",
+    location: [120.102934, 31.420115],
+    aliases: ["检票口", "景区入口", "灵山胜境检票口"],
+  },
+  {
     id: "local-lingshan-buddha",
     name: "灵山胜境-灵山大佛",
     district: "江苏省无锡市滨湖区",
@@ -153,6 +173,24 @@ const LOCAL_NAVIGATION_SUGGESTIONS: AMapTip[] = [
     adcode: "320211",
     location: [120.099984, 31.424601],
     aliases: ["九龙", "九龙灌浴广场"],
+  },
+  {
+    id: "local-buddha-hand",
+    name: "灵山胜境-佛手广场",
+    district: "江苏省无锡市滨湖区",
+    address: "古竹路18号灵山大佛",
+    adcode: "320211",
+    location: [120.098781, 31.427066],
+    aliases: ["灵山佛手", "佛手广场", "天下第一掌"],
+  },
+  {
+    id: "local-maitreya",
+    name: "灵山胜境-百子戏弥勒",
+    district: "江苏省无锡市滨湖区",
+    address: "马山镇古竹路灵山胜境景区内",
+    adcode: "320211",
+    location: [120.098844, 31.42719],
+    aliases: ["百子戏弥勒", "弥勒", "弥勒广场"],
   },
   {
     id: "local-fangong",
@@ -199,6 +237,15 @@ const LOCAL_NAVIGATION_SUGGESTIONS: AMapTip[] = [
     location: [120.103651, 31.420196],
     aliases: ["游客中心", "服务中心", "游客服务中心"],
   },
+  {
+    id: "local-scenic-exit",
+    name: "灵山胜境停车场（出口）",
+    district: "江苏省无锡市滨湖区",
+    address: "马山镇古竹路灵山胜境景区内",
+    adcode: "320211",
+    location: [120.105767, 31.421824],
+    aliases: ["景区出口", "灵山胜境出口", "出口"],
+  },
 ];
 
 const DEFAULT_START_TIP = LOCAL_NAVIGATION_SUGGESTIONS.find(
@@ -222,6 +269,10 @@ const scenicRoutes: ScenicRoute[] = [
     id: "classic",
     name: "经典一日游",
     helper: "首次到访 / 核心景点全覆盖",
+    duration: "6–7 小时",
+    audience: "首次到访",
+    pace: "从容深度",
+    summary: "沿景区中轴进入大佛核心区，再前往梵宫与五印坛城，完整感受灵山代表性景观。",
     stops: [
       "检票口",
       "佛足坛",
@@ -239,6 +290,10 @@ const scenicRoutes: ScenicRoute[] = [
     id: "family",
     name: "亲子轻松游",
     helper: "互动拍照 / 步行压力较低",
+    duration: "约 4 小时",
+    audience: "亲子家庭",
+    pace: "轻松少折返",
+    summary: "减少登高与长距离折返，把互动景观、拍照点和室内空间安排在同一条轻松动线上。",
     stops: ["检票口", "九龙灌浴", "灵山佛手", "百子戏弥勒", "梵宫", "游客中心"],
     notes: ["减少登高与长距离折返", "优先选择互动性强的点位", "适合 4 小时左右"],
   },
@@ -246,10 +301,28 @@ const scenicRoutes: ScenicRoute[] = [
     id: "halfday",
     name: "半日精华游",
     helper: "时间有限 / 快速看重点",
+    duration: "3–4 小时",
+    audience: "时间有限",
+    pace: "重点优先",
+    summary: "压缩支线停留，优先串联九龙灌浴、灵山大佛、梵宫和五印坛城四处核心景观。",
     stops: ["检票口", "九龙灌浴", "灵山大佛", "梵宫", "五印坛城", "景区出口"],
     notes: ["压缩支线停留", "优先保证大佛、梵宫、五印坛城", "适合 3-4 小时"],
   },
 ];
+
+const ROUTE_MAP_POINTS: Record<string, RouteMapPoint> = {
+  检票口: { x: 40, y: 91 },
+  游客中心: { x: 48, y: 95 },
+  佛足坛: { x: 33, y: 67 },
+  九龙灌浴: { x: 32, y: 55 },
+  灵山佛手: { x: 22, y: 42 },
+  百子戏弥勒: { x: 41, y: 40 },
+  祥符禅寺: { x: 33, y: 34 },
+  灵山大佛: { x: 25, y: 15 },
+  梵宫: { x: 76, y: 42 },
+  五印坛城: { x: 61, y: 63 },
+  景区出口: { x: 61, y: 82 },
+};
 
 function buildNarration(route: ScenicRoute) {
   return [
@@ -460,10 +533,16 @@ function isWalkingRouteResponse(value: unknown): value is WalkingRouteResponse {
 export function ScenicMapPanel({
   defaultMode,
   immersive = false,
+  initialDestination = "",
+  onAskRouteStop,
+  onOpenMapDestination,
   onNarrationChange,
 }: {
   defaultMode: "route_guide" | "map_guide";
   immersive?: boolean;
+  initialDestination?: string;
+  onAskRouteStop?: (stop: string) => void;
+  onOpenMapDestination?: (stop: string) => void;
   onNarrationChange?: (payload: { key: string; text: string }) => void;
 }) {
   const [activeRouteId, setActiveRouteId] = useState(
@@ -512,6 +591,19 @@ export function ScenicMapPanel({
   useEffect(() => {
     setActiveRouteId(defaultMode === "map_guide" ? "halfday" : "classic");
   }, [defaultMode]);
+
+  useEffect(() => {
+    const destination = initialDestination.trim();
+    if (defaultMode !== "map_guide" || !destination) {
+      return;
+    }
+    const localTip = findLocalTip(destination);
+    invalidateRoute(`已从游览路线带入“${destination}”，请确认后规划步行路线。`);
+    setRouteEnd(destination);
+    setSelectedEndTip(localTip);
+    setEndSuggestions([]);
+    setIsPlannerOpen(true);
+  }, [defaultMode, initialDestination]);
 
   useEffect(() => {
     setActiveSuggestionIndex(0);
@@ -947,6 +1039,8 @@ export function ScenicMapPanel({
     return (
       <RouteGuideView
         activeRoute={activeRoute}
+        onAskRouteStop={onAskRouteStop}
+        onOpenMapDestination={onOpenMapDestination}
         onRouteChange={setActiveRouteId}
         panelRef={panelRef}
       />
@@ -1066,69 +1160,120 @@ export function ScenicMapPanel({
 
 function RouteGuideView({
   activeRoute,
+  onAskRouteStop,
+  onOpenMapDestination,
   onRouteChange,
   panelRef,
 }: {
   activeRoute: ScenicRoute;
+  onAskRouteStop?: (stop: string) => void;
+  onOpenMapDestination?: (stop: string) => void;
   onRouteChange: (routeId: string) => void;
   panelRef: RefObject<HTMLElement | null>;
 }) {
+  const plottedStops = activeRoute.stops
+    .map((stop, index) => ({ stop, index, point: ROUTE_MAP_POINTS[stop] }))
+    .filter((item): item is { stop: string; index: number; point: RouteMapPoint } => Boolean(item.point));
+  const routeLine = plottedStops.map(({ point }) => `${point.x},${point.y}`).join(" ");
+
   return (
-    <section ref={panelRef} className="scenic-map-panel" aria-label="景区地图与路线规划">
-      <div className="scenic-map-head">
-        <div>
-          <p className="eyebrow">SCENIC MAP</p>
-          <h3>游览路线方案</h3>
-          <span>{activeRoute.helper}</span>
-        </div>
-      </div>
-
-      <div className="route-tabs" aria-label="推荐路线">
-        {scenicRoutes.map((route) => (
-          <button
-            key={route.id}
-            type="button"
-            className={route.id === activeRoute.id ? "active" : ""}
-            onClick={() => onRouteChange(route.id)}
-          >
-            <Route size={16} aria-hidden="true" />
-            <span>{route.name}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="map-display-grid route-guide-map-grid">
-        <figure className="static-scenic-map route-guide-image">
+    <section ref={panelRef} className="route-guide-experience" aria-label="灵山推荐游览路线">
+      <figure className="route-map-stage">
+        <div className="route-map-artwork">
           <img src={scenicMapImage} alt="灵山胜境景区导览图" />
-        </figure>
-        <article className="route-narration-card">
-          <strong>数字人讲解稿</strong>
-          <p>{buildNarration(activeRoute)}</p>
-        </article>
-      </div>
+          <svg className="route-map-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points={routeLine} />
+          </svg>
+          {plottedStops.map(({ stop, index, point }) => (
+            <button
+              key={`${activeRoute.id}-${stop}`}
+              type="button"
+              className="route-map-marker"
+              style={{ left: `${point.x}%`, top: `${point.y}%` }}
+              onClick={() => onOpenMapDestination?.(stop)}
+              aria-label={`在地图导航中查看${stop}`}
+              title={`查看${stop}`}
+            >
+              {index + 1}
+            </button>
+          ))}
+        </div>
+        <figcaption>
+          <span><i aria-hidden="true" /> {activeRoute.name}</span>
+          <small>点击地图序号可转到步行导航</small>
+        </figcaption>
+      </figure>
 
-      <div className="map-info-grid">
-        <article className="route-summary-card route-text-card">
-          <strong>{activeRoute.name}</strong>
-          <ol>
-            {activeRoute.stops.map((stop) => (
-              <li key={stop}>{stop}</li>
-            ))}
-          </ol>
-        </article>
-        <article className="route-summary-card">
-          <strong>讲解提示</strong>
-          <ul>
-            {activeRoute.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </article>
-        <article className="route-summary-card">
-          <strong>数字人播报文案</strong>
-          <p>{buildNarration(activeRoute)}</p>
-        </article>
-      </div>
+      <aside className="route-plan-panel" aria-label="路线选择与景点顺序">
+        <header className="route-plan-head">
+          <p className="eyebrow">SCENIC ROUTE · LINGSHAN</p>
+          <div>
+            <h2>{activeRoute.name}</h2>
+            <span>{activeRoute.helper}</span>
+          </div>
+          <p>{activeRoute.summary}</p>
+        </header>
+
+        <nav className="route-plan-tabs" aria-label="推荐路线">
+          {scenicRoutes.map((route) => (
+            <button
+              key={route.id}
+              type="button"
+              className={route.id === activeRoute.id ? "active" : ""}
+              onClick={() => onRouteChange(route.id)}
+              aria-pressed={route.id === activeRoute.id}
+            >
+              <Route size={15} aria-hidden="true" />
+              <span>
+                <strong>{route.name}</strong>
+                <small>{route.duration}</small>
+              </span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="route-profile" aria-label="路线概况">
+          <span><Clock3 size={14} aria-hidden="true" /><b>{activeRoute.duration}</b><small>预计时长</small></span>
+          <span><UsersRound size={14} aria-hidden="true" /><b>{activeRoute.audience}</b><small>推荐人群</small></span>
+          <span><Sparkles size={14} aria-hidden="true" /><b>{activeRoute.pace}</b><small>游览节奏</small></span>
+        </div>
+
+        <div className="route-stop-head">
+          <strong>景点顺序</strong>
+          <span>{activeRoute.stops.length} 站 · 完整展示</span>
+        </div>
+        <ol className="route-stop-list">
+          {activeRoute.stops.map((stop, index) => (
+            <li key={stop}>
+              <i>{String(index + 1).padStart(2, "0")}</i>
+              <span>{stop}</span>
+              <div className="route-stop-actions">
+                <button
+                  type="button"
+                  onClick={() => onOpenMapDestination?.(stop)}
+                  aria-label={`在地图中查看${stop}`}
+                  title="地图定位"
+                >
+                  <MapPin size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAskRouteStop?.(stop)}
+                  aria-label={`向数字人询问${stop}`}
+                  title="咨询数字人"
+                >
+                  <MessageCircleQuestion size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <footer className="route-plan-note">
+          <Navigation size={14} aria-hidden="true" />
+          路线为游览顺序建议，现场请以开放区域和景区指示为准。
+        </footer>
+      </aside>
     </section>
   );
 }

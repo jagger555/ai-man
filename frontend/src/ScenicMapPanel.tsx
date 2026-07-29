@@ -9,8 +9,10 @@ import {
   LocateFixed,
   MapPin,
   Navigation,
+  PanelLeftOpen,
   Route,
   Sparkles,
+  X,
 } from "lucide-react";
 import scenicMapImage from "./assets/lingshan-map.png";
 
@@ -457,9 +459,11 @@ function isWalkingRouteResponse(value: unknown): value is WalkingRouteResponse {
 
 export function ScenicMapPanel({
   defaultMode,
+  immersive = false,
   onNarrationChange,
 }: {
   defaultMode: "route_guide" | "map_guide";
+  immersive?: boolean;
   onNarrationChange?: (payload: { key: string; text: string }) => void;
 }) {
   const [activeRouteId, setActiveRouteId] = useState(
@@ -484,6 +488,7 @@ export function ScenicMapPanel({
   const [routeSteps, setRouteSteps] = useState<WalkingRouteStep[]>([]);
   const [routeSummary, setRouteSummary] = useState<WalkingRouteSummary | null>(null);
   const [isPlanning, setIsPlanning] = useState(false);
+  const [isPlannerOpen, setIsPlannerOpen] = useState(!immersive);
   const [suggestionStatus, setSuggestionStatus] = useState("输入两个字以上可查看高德地点联想。");
   const panelRef = useRef<HTMLElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1035,10 +1040,13 @@ export function ScenicMapPanel({
       startInputRef={startInputRef}
       suggestionStatus={suggestionStatus}
       isPlanning={isPlanning}
+      immersive={immersive}
+      isPlannerOpen={isPlannerOpen}
       canPlan={canPlanRoute}
       amapNavigationUrl={amapNavigationUrl}
       onDisplayModeChange={applyDisplayMode}
       onLocate={locateWithAmap}
+      onPlannerOpenChange={setIsPlannerOpen}
       onQuickDestination={selectQuickDestination}
       onRetryMap={retryMapLoad}
       onRouteEndChange={handleRouteEndChange}
@@ -1136,6 +1144,42 @@ function formatRouteDuration(duration: number) {
   return `${Math.max(1, Math.round(duration / 60))} 分钟`;
 }
 
+function simplifyRouteInstruction(instruction: string) {
+  return instruction
+    .replace(/步行\s*\d+\s*米/g, "前行")
+    .replace(/\d+\s*米/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/前行后/g, "前行后")
+    .trim();
+}
+
+function buildRouteHighlights(
+  steps: WalkingRouteStep[],
+  summary: WalkingRouteSummary | null,
+  maxHighlights = 5,
+) {
+  if (steps.length === 0) {
+    return [];
+  }
+  const highlightCount = Math.min(maxHighlights, steps.length);
+  return Array.from({ length: highlightCount }, (_, index) => {
+    const startIndex = Math.floor((index * steps.length) / highlightCount);
+    const endIndex = Math.max(startIndex + 1, Math.floor(((index + 1) * steps.length) / highlightCount));
+    const group = steps.slice(startIndex, endIndex);
+    const representative = group[Math.floor(group.length / 2)] ?? group[0];
+    const distance = group.reduce((total, step) => total + step.distance, 0);
+    const duration = group.reduce((total, step) => total + step.duration, 0);
+    const startName = summary?.start.replace("灵山胜境-", "") ?? "起点";
+    const endName = summary?.end.replace("灵山胜境-", "") ?? "目的地";
+    const instruction = index === 0
+      ? `从${startName}出发`
+      : index === highlightCount - 1
+        ? `抵达${endName}`
+        : simplifyRouteInstruction(representative.instruction) || "沿地图路线继续前行";
+    return { instruction, distance, duration };
+  });
+}
+
 function AmapNavigationView({
   activeSuggestionIndex,
   activeSuggestionField,
@@ -1143,7 +1187,9 @@ function AmapNavigationView({
   canPlan,
   displayMode,
   endInputRef,
+  immersive,
   isPlanning,
+  isPlannerOpen,
   locationStatus,
   mapContainerRef,
   mapState,
@@ -1151,6 +1197,7 @@ function AmapNavigationView({
   panelRef,
   onDisplayModeChange,
   onLocate,
+  onPlannerOpenChange,
   onQuickDestination,
   onRetryMap,
   onRouteEndChange,
@@ -1178,7 +1225,9 @@ function AmapNavigationView({
   canPlan: boolean;
   displayMode: AmapDisplayMode;
   endInputRef: RefObject<HTMLInputElement | null>;
+  immersive: boolean;
   isPlanning: boolean;
+  isPlannerOpen: boolean;
   locationStatus: string;
   mapContainerRef: RefObject<HTMLDivElement | null>;
   mapState: MapLoadState;
@@ -1186,6 +1235,7 @@ function AmapNavigationView({
   panelRef: RefObject<HTMLElement | null>;
   onDisplayModeChange: (mode: AmapDisplayMode) => void;
   onLocate: () => void;
+  onPlannerOpenChange: (isOpen: boolean) => void;
   onQuickDestination: (tip: AMapTip) => void;
   onRetryMap: () => void;
   onRouteEndChange: (value: string) => void;
@@ -1219,6 +1269,7 @@ function AmapNavigationView({
       : mapState === "error"
         ? "高德地图暂不可用"
         : "正在连接高德地图";
+  const routeHighlights = buildRouteHighlights(routeSteps, routeSummary);
 
   function renderSuggestions(field: "start" | "end", suggestions: AMapTip[]) {
     if (activeSuggestionField !== field || suggestions.length === 0) {
@@ -1257,7 +1308,11 @@ function AmapNavigationView({
   }
 
   return (
-    <section ref={panelRef} className="scenic-map-panel amap-product-panel" aria-label="高德地图步行路线规划">
+    <section
+      ref={panelRef}
+      className={`scenic-map-panel amap-product-panel${immersive ? " is-immersive" : ""}`}
+      aria-label="高德地图步行路线规划"
+    >
       <div className="scenic-map-head amap-product-head">
         <div>
           <p className="eyebrow">AMAP · LINGSHAN</p>
@@ -1271,10 +1326,28 @@ function AmapNavigationView({
       </div>
 
       <div className="amap-product-shell">
-        <aside className="amap-route-planner" aria-label="路线规划器">
+        <aside
+          className={`amap-route-planner${isPlannerOpen ? " is-open" : ""}${routeSummary ? " has-route" : ""}`}
+          aria-label="路线规划器"
+          aria-hidden={immersive && !isPlannerOpen}
+          inert={immersive && !isPlannerOpen}
+        >
           <div className="planner-mode-row">
             <span><Footprints size={16} aria-hidden="true" /> 景区步行</span>
-            <em><Sparkles size={13} aria-hidden="true" /> 推荐方式</em>
+            <div className="planner-mode-actions">
+              <em><Sparkles size={13} aria-hidden="true" /> 推荐方式</em>
+              {immersive ? (
+                <button
+                  type="button"
+                  className="planner-close-button"
+                  onClick={() => onPlannerOpenChange(false)}
+                  aria-label="收起路线规划"
+                  title="收起路线规划"
+                >
+                  <X size={17} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <form
@@ -1409,13 +1482,16 @@ function AmapNavigationView({
 
           <section className="product-route-steps" aria-label="步行路线步骤">
             <div className="route-step-head">
-              <strong>路线步骤</strong>
-              <span>{routeSteps.length > 0 ? `${routeSteps.length} 段` : "等待规划"}</span>
+              <div>
+                <strong>关键引导</strong>
+                <small>跟随地图路线即可，无需记忆全部转向</small>
+              </div>
+              <span>{routeHighlights.length > 0 ? `${routeHighlights.length} 个关键点` : "等待规划"}</span>
             </div>
             <div ref={routePanelRef} className="amap-route-result">
-              {routeSteps.length > 0 ? (
+              {routeHighlights.length > 0 ? (
                 <ol>
-                  {routeSteps.map((step, index) => (
+                  {routeHighlights.map((step, index) => (
                     <li key={`${step.instruction}-${index}`}>
                       <i>{index + 1}</i>
                       <div>
@@ -1438,6 +1514,18 @@ function AmapNavigationView({
 
         <section className="amap-map-stage" aria-label="高德实时地图">
           <div ref={mapContainerRef} className="amap-container" />
+
+          {immersive && !isPlannerOpen ? (
+            <button
+              type="button"
+              className="map-planner-open-button"
+              onClick={() => onPlannerOpenChange(true)}
+              aria-label="打开路线规划"
+            >
+              <PanelLeftOpen size={18} aria-hidden="true" />
+              路线规划
+            </button>
+          ) : null}
 
           {mapState !== "ready" ? (
             <div className={`map-load-panel ${mapState}`} role={mapState === "error" ? "alert" : "status"}>

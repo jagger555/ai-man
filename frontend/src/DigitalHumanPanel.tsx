@@ -1,15 +1,52 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { Pause, RotateCcw, Volume2 } from "lucide-react";
+import type { FormEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import {
+  Maximize2,
+  MessageCircleQuestion,
+  Mic,
+  Minimize2,
+  Pause,
+  Play,
+  RotateCcw,
+  Send,
+  Volume2,
+} from "lucide-react";
 import type { DigitalHumanConfig } from "./types";
 
 type ConnectionState = "idle" | "connecting" | "connected" | "error";
+export type DigitalHumanDisplayMode = "stage" | "pip";
 
 type DigitalHumanPanelProps = {
   latestAnswer: string;
   latestAnswerKey: string;
   isAnswerLoading: boolean;
   refreshKey?: number;
+  mode?: DigitalHumanDisplayMode;
+  question?: string;
+  isListening?: boolean;
+  isRecognizing?: boolean;
+  onQuestionChange?: (question: string) => void;
+  onSubmitQuestion?: () => void;
+  onToggleListening?: () => void;
+};
+
+type PipPosition = {
+  left: number;
+  top: number;
+};
+
+type PipAnchor = {
+  x: number;
+  y: number;
+};
+
+type PipDragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originLeft: number;
+  originTop: number;
+  hasMoved: boolean;
 };
 
 const ICE_GATHERING_TIMEOUT_MS = 15000;
@@ -74,7 +111,15 @@ export function DigitalHumanPanel({
   latestAnswerKey,
   isAnswerLoading,
   refreshKey = 0,
+  mode = "stage",
+  question = "",
+  isListening = false,
+  isRecognizing = false,
+  onQuestionChange,
+  onSubmitQuestion,
+  onToggleListening,
 }: DigitalHumanPanelProps) {
+  const panelRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -87,12 +132,20 @@ export function DigitalHumanPanel({
   const autoAttemptedAnswerKeyRef = useRef("");
   const spokenAnswerKeyRef = useRef("");
   const loadingPromptSentRef = useRef(false);
+  const pipDragRef = useRef<PipDragState | null>(null);
+  const pipAnchorRef = useRef<PipAnchor | null>(null);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [statusMessage, setStatusMessage] = useState("等待连接 LiveTalking 服务");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
+  const [isPipCollapsed, setIsPipCollapsed] = useState(false);
+  const [isPipQuestionOpen, setIsPipQuestionOpen] = useState(false);
+  const [isCaptionExpanded, setIsCaptionExpanded] = useState(false);
+  const [isPipDragging, setIsPipDragging] = useState(false);
+  const [pipPosition, setPipPosition] = useState<PipPosition | null>(null);
+  const [pipAnchor, setPipAnchor] = useState<PipAnchor | null>(null);
 
   configRef.current = config;
   sessionIdRef.current = sessionId;
@@ -130,6 +183,55 @@ export function DigitalHumanPanel({
       window.removeEventListener("beforeunload", handlePageExit);
     };
   }, []);
+
+  useEffect(() => {
+    if (mode !== "pip") {
+      return;
+    }
+
+    const restorePipAnchor = () => {
+      const panel = panelRef.current;
+      if (!panel) {
+        return;
+      }
+      const rect = panel.getBoundingClientRect();
+      const currentAnchor = pipAnchorRef.current;
+      setPipPosition(
+        currentAnchor ? getPipPositionFromAnchor(currentAnchor, rect.width, rect.height) : null,
+      );
+    };
+
+    const handleViewportChange = () => window.requestAnimationFrame(restorePipAnchor);
+    restorePipAnchor();
+    window.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
+  }, [mode, isPipCollapsed, pipAnchor]);
+
+  useEffect(() => {
+    if (mode !== "pip") {
+      return;
+    }
+    const handleGlobalPointerMove = (event: PointerEvent) => {
+      updatePipFromPointer(event.pointerId, event.clientX, event.clientY);
+    };
+    const handleGlobalPointerEnd = (event: PointerEvent) => {
+      finishPipDrag(event.pointerId);
+    };
+    window.addEventListener("pointermove", handleGlobalPointerMove, true);
+    window.addEventListener("pointerup", handleGlobalPointerEnd, true);
+    window.addEventListener("pointercancel", handleGlobalPointerEnd, true);
+    return () => {
+      window.removeEventListener("pointermove", handleGlobalPointerMove, true);
+      window.removeEventListener("pointerup", handleGlobalPointerEnd, true);
+      window.removeEventListener("pointercancel", handleGlobalPointerEnd, true);
+    };
+  }, [mode]);
 
   useEffect(() => {
     const trimmedAnswer = latestAnswer.trim();
@@ -496,19 +598,156 @@ export function DigitalHumanPanel({
     }
   }
 
+  function beginPipDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (mode !== "pip" || isPipCollapsed || event.button !== 0) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (target.closest("button:not(.pip-caption), input, form")) {
+      return;
+    }
+    const panel = panelRef.current;
+    if (!panel) {
+      return;
+    }
+    const rect = panel.getBoundingClientRect();
+    pipDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originLeft: rect.left,
+      originTop: rect.top,
+      hasMoved: false,
+    };
+    event.preventDefault();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // The global drag layer keeps movement working when browser zoom or the map iframe blocks capture.
+    }
+    setIsPipDragging(true);
+  }
+
+  function movePip(event: ReactPointerEvent<HTMLElement>) {
+    updatePipFromPointer(event.pointerId, event.clientX, event.clientY);
+  }
+
+  function updatePipFromPointer(pointerId: number, clientX: number, clientY: number) {
+    const drag = pipDragRef.current;
+    const panel = panelRef.current;
+    if (!drag || !panel || drag.pointerId !== pointerId) {
+      return;
+    }
+    const rect = panel.getBoundingClientRect();
+    const deltaX = clientX - drag.startX;
+    const deltaY = clientY - drag.startY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+      drag.hasMoved = true;
+    }
+    const nextPosition = clampPipPosition(
+      drag.originLeft + deltaX,
+      drag.originTop + deltaY,
+      rect.width,
+      rect.height,
+    );
+    pipAnchorRef.current = getPipAnchorFromPosition(nextPosition, rect.width, rect.height);
+    setPipPosition(nextPosition);
+  }
+
+  function endPipDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (pipDragRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    finishPipDrag(event.pointerId);
+  }
+
+  function finishPipDrag(pointerId: number) {
+    if (pipDragRef.current?.pointerId !== pointerId) {
+      return;
+    }
+    const panel = panelRef.current;
+    if (panel) {
+      const rect = panel.getBoundingClientRect();
+      const position = { left: rect.left, top: rect.top };
+      if (isPipAtDefaultCorner(position, rect.width, rect.height)) {
+        pipAnchorRef.current = null;
+        setPipAnchor(null);
+        setPipPosition(null);
+      } else {
+        const nextAnchor = getPipAnchorFromPosition(position, rect.width, rect.height);
+        pipAnchorRef.current = nextAnchor;
+        setPipAnchor(nextAnchor);
+        setPipPosition(getPipPositionFromAnchor(nextAnchor, rect.width, rect.height));
+      }
+    }
+    pipDragRef.current = null;
+    setIsPipDragging(false);
+  }
+
+  function submitPipQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!question.trim() || isAnswerLoading) {
+      return;
+    }
+    onSubmitQuestion?.();
+  }
+
+  const pipStyle =
+    mode === "pip" && pipPosition
+      ? {
+          left: `${pipPosition.left}px`,
+          top: `${pipPosition.top}px`,
+          right: "auto",
+          bottom: "auto",
+        }
+      : undefined;
+
+  const fullCaption = latestAnswer.trim() || "您好，我是灵山数字导游，可以为您介绍路线、景点和文化故事。";
+  const shouldScrollCaption = fullCaption.length > 22 && !isCaptionExpanded;
+  const captionScrollDuration = Math.min(60, Math.max(24, Math.ceil(fullCaption.length / 2.2)));
+
   return (
-    <section className="digital-human-live-card" aria-label="LiveTalking 数字人">
+    <section
+      ref={panelRef}
+      className={`digital-human-live-card ${mode === "pip" ? "pip-mode" : "stage-mode"}${
+        isPipCollapsed ? " is-collapsed" : ""
+      }${isPipDragging ? " is-dragging" : ""}${isPipQuestionOpen ? " is-question-open" : ""}`}
+      style={pipStyle}
+      aria-label={mode === "pip" ? "数字人画中画" : "LiveTalking 数字人"}
+      onPointerDown={beginPipDrag}
+      onPointerMove={movePip}
+      onPointerUp={endPipDrag}
+      onPointerCancel={endPipDrag}
+    >
       <MistMountainLayer />
-      <div className="stage-head">
-        <div>
-          <p className="eyebrow">灵山数字导游</p>
-          <strong>灵山数字人导游</strong>
+      {mode === "pip" && isPipDragging ? <span className="pip-drag-shield" aria-hidden="true" /> : null}
+      {mode === "pip" ? (
+        <svg className="pip-avatar-mask-defs" aria-hidden="true">
+          <defs>
+            <clipPath id="guide-pip-avatar-clip" clipPathUnits="objectBoundingBox">
+              <ellipse cx="0.5" cy="0.25" rx="0.19" ry="0.24" />
+              <path d="M 0.29 0.42 Q 0.5 0.36 0.71 0.42 L 0.94 1 L 0.06 1 Z" />
+            </clipPath>
+          </defs>
+        </svg>
+      ) : null}
+      {mode === "stage" ? (
+        <div className="stage-head">
+          <div className="stage-title-block">
+            <p className="eyebrow">灵山数字导游</p>
+            <strong>灵山数字人导游</strong>
+          </div>
+          <div className="stage-head-actions">
+            <span className={`stage-state ${connectionState}`}>
+              <span />
+              {stageStateLabel}
+            </span>
+          </div>
         </div>
-        <span className={`stage-state ${connectionState}`}>
-          <span />
-          {stageStateLabel}
-        </span>
-      </div>
+      ) : null}
       <ScenicStageFrame>
         <LotusWatermark />
         <div className="live-stage">
@@ -536,49 +775,231 @@ export function DigitalHumanPanel({
           ) : null}
         </div>
       </ScenicStageFrame>
-      <p className="stage-caption">{getCaptionText(latestAnswer)}</p>
+      {mode === "pip" ? (
+        <button
+          type="button"
+          className={`stage-caption pip-caption${shouldScrollCaption ? " is-scrolling" : ""}`}
+          aria-expanded={isCaptionExpanded}
+          title={isCaptionExpanded ? "收起完整字幕" : "展开完整字幕"}
+          onClick={() => setIsCaptionExpanded((expanded) => !expanded)}
+        >
+          <span
+            className="pip-caption-track"
+            style={shouldScrollCaption ? { animationDuration: `${captionScrollDuration}s` } : undefined}
+          >
+            <span>{fullCaption}</span>
+            {shouldScrollCaption ? <span aria-hidden="true">{fullCaption}</span> : null}
+          </span>
+        </button>
+      ) : (
+        <p className="stage-caption">{getCaptionText(latestAnswer)}</p>
+      )}
 
-      <div className="digital-human-actions">
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={() => void connectDigitalHuman()}
-          disabled={connectionState === "connecting"}
-        >
-          <RotateCcw size={16} aria-hidden="true" />
-          重新连接
-        </button>
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={() => void interruptSpeaking()}
-          disabled={!sessionId}
-        >
-          <Pause size={16} aria-hidden="true" />
-          暂停播报
-        </button>
-        <button
-          type="button"
-          className="primary-action"
-          onClick={() => void speakLatestAnswer()}
-          disabled={!canSpeak || isSpeaking}
-        >
-          <Volume2 size={16} aria-hidden="true" />
-          {isSpeaking ? "发送中..." : "播报回答"}
-        </button>
-        {isAudioBlocked ? (
+      {mode === "pip" ? (
+        <>
+          {isPipQuestionOpen ? (
+            <form className="pip-question-sheet" onSubmit={submitPipQuestion}>
+              <label htmlFor="pip-guide-question">向数字导游提问</label>
+              <div className="pip-question-row">
+                <input
+                  id="pip-guide-question"
+                  value={question}
+                  onChange={(event) => onQuestionChange?.(event.target.value)}
+                  placeholder="输入路线或景点问题"
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className={isListening || isRecognizing ? "active" : ""}
+                  aria-label={isListening ? "结束语音输入" : isRecognizing ? "正在识别语音" : "开始语音输入"}
+                  title={isListening ? "结束语音输入" : "语音输入"}
+                  onClick={onToggleListening}
+                  disabled={isRecognizing}
+                >
+                  <Mic size={15} aria-hidden="true" />
+                </button>
+                <button
+                  type="submit"
+                  className="submit"
+                  aria-label="发送问题"
+                  title="发送问题"
+                  disabled={!question.trim() || isAnswerLoading}
+                >
+                  <Send size={15} aria-hidden="true" />
+                </button>
+              </div>
+              <div className={`pip-connection-row ${connectionState}`}>
+                <span>{statusMessage}</span>
+                <button
+                  type="button"
+                  aria-label="重新连接数字人"
+                  title="重新连接"
+                  onClick={() => void connectDigitalHuman()}
+                  disabled={connectionState === "connecting"}
+                >
+                  <RotateCcw size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </form>
+          ) : null}
+          <div className="digital-human-actions pip-actions" aria-label="数字人控制">
+            <button
+              type="button"
+              className={isPipQuestionOpen ? "active" : ""}
+              aria-label="向数字人提问"
+              title="提问"
+              aria-expanded={isPipQuestionOpen}
+              onClick={() => setIsPipQuestionOpen((open) => !open)}
+            >
+              <MessageCircleQuestion size={17} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="暂停数字人播报"
+              title="暂停播报"
+              onClick={() => void interruptSpeaking()}
+              disabled={!sessionId}
+            >
+              <Pause size={17} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="primary"
+              aria-label="播放最近回答"
+              title="播放回答"
+              onClick={() => void speakLatestAnswer()}
+              disabled={!canSpeak || isSpeaking}
+            >
+              <Play size={17} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label="收起数字人"
+              title="收起数字人"
+              onClick={() => {
+                setIsPipCollapsed(true);
+                setIsPipQuestionOpen(false);
+              }}
+            >
+              <Minimize2 size={16} aria-hidden="true" />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="digital-human-actions">
           <button
             type="button"
             className="secondary-action"
-            onClick={() => void enableAudio()}
+            onClick={() => void connectDigitalHuman()}
+            disabled={connectionState === "connecting"}
           >
-            启用声音
+            <RotateCcw size={16} aria-hidden="true" />
+            重新连接
           </button>
-        ) : null}
-      </div>
+          <button
+            type="button"
+            className="secondary-action"
+            onClick={() => void interruptSpeaking()}
+            disabled={!sessionId}
+          >
+            <Pause size={16} aria-hidden="true" />
+            暂停播报
+          </button>
+          <button
+            type="button"
+            className="primary-action"
+            onClick={() => void speakLatestAnswer()}
+            disabled={!canSpeak || isSpeaking}
+          >
+            <Volume2 size={16} aria-hidden="true" />
+            {isSpeaking ? "发送中..." : "播报回答"}
+          </button>
+          {isAudioBlocked ? (
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => void enableAudio()}
+            >
+              启用声音
+            </button>
+          ) : null}
+        </div>
+      )}
 
       <p className={`digital-human-status ${connectionState}`}>{statusMessage}</p>
+      {mode === "pip" && isPipCollapsed ? (
+        <button
+          type="button"
+          className="pip-expand-button"
+          aria-label="展开数字人画中画"
+          title="展开数字人"
+          onClick={() => setIsPipCollapsed(false)}
+        >
+          <Maximize2 size={18} aria-hidden="true" />
+        </button>
+      ) : null}
     </section>
+  );
+}
+
+function getPipBounds(width: number, height: number) {
+  const rootStyles = getComputedStyle(document.documentElement);
+  const edgeGap = Number.parseFloat(rootStyles.getPropertyValue("--guide-pip-edge-gap")) || 16;
+  const safeBottom = Number.parseFloat(rootStyles.getPropertyValue("--guide-pip-safe-bottom")) || 18;
+  const viewport = window.visualViewport;
+  const viewportLeft = viewport?.offsetLeft ?? 0;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  const viewportWidth = viewport?.width ?? window.innerWidth;
+  const viewportHeight = viewport?.height ?? window.innerHeight;
+  const minLeft = viewportLeft + edgeGap;
+  const minTop = viewportTop + edgeGap;
+  const maxLeft = Math.max(minLeft, viewportLeft + viewportWidth - width - edgeGap);
+  const maxTop = Math.max(minTop, viewportTop + viewportHeight - height - safeBottom);
+  return {
+    minLeft,
+    minTop,
+    maxLeft,
+    maxTop,
+    horizontalRange: Math.max(0, maxLeft - minLeft),
+    verticalRange: Math.max(0, maxTop - minTop),
+  };
+}
+
+function clampPipPosition(left: number, top: number, width: number, height: number): PipPosition {
+  const bounds = getPipBounds(width, height);
+  return {
+    left: Math.min(Math.max(left, bounds.minLeft), bounds.maxLeft),
+    top: Math.min(Math.max(top, bounds.minTop), bounds.maxTop),
+  };
+}
+
+function getPipAnchorFromPosition(position: PipPosition, width: number, height: number): PipAnchor {
+  const bounds = getPipBounds(width, height);
+  return {
+    x: bounds.horizontalRange > 0
+      ? Math.min(1, Math.max(0, (position.left - bounds.minLeft) / bounds.horizontalRange))
+      : 1,
+    y: bounds.verticalRange > 0
+      ? Math.min(1, Math.max(0, (position.top - bounds.minTop) / bounds.verticalRange))
+      : 1,
+  };
+}
+
+function getPipPositionFromAnchor(anchor: PipAnchor, width: number, height: number): PipPosition {
+  const bounds = getPipBounds(width, height);
+  return {
+    left: bounds.minLeft + bounds.horizontalRange * anchor.x,
+    top: bounds.minTop + bounds.verticalRange * anchor.y,
+  };
+}
+
+function isPipAtDefaultCorner(position: PipPosition, width: number, height: number) {
+  const rootStyles = getComputedStyle(document.documentElement);
+  const snapDistance = Number.parseFloat(rootStyles.getPropertyValue("--guide-pip-snap-distance")) || 30;
+  const bounds = getPipBounds(width, height);
+  return (
+    bounds.maxLeft - position.left <= snapDistance &&
+    bounds.maxTop - position.top <= snapDistance
   );
 }
 

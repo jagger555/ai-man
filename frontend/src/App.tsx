@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  ArrowLeft,
   Bot,
   CalendarClock,
   Database,
@@ -62,6 +63,7 @@ const positiveEmojis = ["😊", "😄", "👍", "❤️", "🙏", "🤩", "👏"
 
 type AdminSection = "overview" | "insights" | "qa" | "knowledge" | "avatar";
 type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "vr_guide" | "service_guide";
+type VisitorPage = "home" | "route" | "map" | "vr" | "performance" | "services";
 type PendingDashboardAction =
   | "low-confidence"
   | "high-frequency"
@@ -82,6 +84,61 @@ type GuideServiceEntry = {
   supports: string[];
   icon: typeof Route;
 };
+
+const visitorPageByGuideIntent: Record<GuideIntent, Exclude<VisitorPage, "home">> = {
+  route_guide: "route",
+  map_guide: "map",
+  vr_guide: "vr",
+  performance_time: "performance",
+  service_guide: "services",
+};
+
+const guideIntentByVisitorPage: Partial<Record<VisitorPage, GuideIntent>> = {
+  route: "route_guide",
+  map: "map_guide",
+  vr: "vr_guide",
+  performance: "performance_time",
+  services: "service_guide",
+};
+
+const visitorPageMeta: Record<Exclude<VisitorPage, "home">, { eyebrow: string; title: string; helper: string }> = {
+  route: {
+    eyebrow: "SCENIC ROUTE · LINGSHAN",
+    title: "灵山游览路线",
+    helper: "按游览节奏查看路线、景点顺序与沿途提醒",
+  },
+  map: {
+    eyebrow: "AMAP · LINGSHAN",
+    title: "灵山景区地图导航",
+    helper: "选择起终点，查看景区步行路线并交接高德地图",
+  },
+  vr: {
+    eyebrow: "360° PANORAMA · LINGSHAN",
+    title: "灵山胜境全景漫游",
+    helper: "进入实景，自由查看灵山代表性空间",
+  },
+  performance: {
+    eyebrow: "PERFORMANCE · LINGSHAN",
+    title: "灵山演出时间",
+    helper: "查看九龙灌浴与梵宫文化体验安排",
+  },
+  services: {
+    eyebrow: "VISITOR SERVICE · LINGSHAN",
+    title: "灵山游客服务",
+    helper: "查找景区常用设施与服务信息",
+  },
+};
+
+function getVisitorPageFromLocation(): VisitorPage {
+  const page = window.location.hash.replace(/^#/, "") as VisitorPage;
+  return page === "route" ||
+    page === "map" ||
+    page === "vr" ||
+    page === "performance" ||
+    page === "services"
+    ? page
+    : "home";
+}
 
 const performanceScheduleNotice = {
   validPeriod: "2026/7/2 至 2026/7/31",
@@ -514,15 +571,20 @@ function GuideServiceBar({
   entries,
   isLoading,
   activeIntent,
+  pageMode = false,
   onSelect,
 }: {
   entries: GuideServiceEntry[];
   isLoading: boolean;
   activeIntent?: GuideIntent;
+  pageMode?: boolean;
   onSelect: (intent: GuideIntent) => void;
 }) {
   return (
-    <section className="today-recommend-bar" aria-label="常用导览服务">
+    <section
+      className={`today-recommend-bar${pageMode ? " page-mode" : ""}`}
+      aria-label="常用导览服务"
+    >
       {entries.map((item) => {
         const ItemIcon = item.icon;
         return (
@@ -557,6 +619,7 @@ export function App() {
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("chat");
+  const [visitorPage, setVisitorPage] = useState<VisitorPage>(() => getVisitorPageFromLocation());
   const [activeAdminSection, setActiveAdminSection] =
     useState<AdminSection>("overview");
   const [adminTimeRange, setAdminTimeRange] = useState<"today" | "7d" | "30d">("7d");
@@ -678,6 +741,28 @@ export function App() {
     lowConfidenceLoading ||
     feedbackLoading ||
     visitorReportLoading;
+
+  useEffect(() => {
+    const syncVisitorPage = () => {
+      const nextPage = getVisitorPageFromLocation();
+      setVisitorPage(nextPage);
+      const nextIntent = guideIntentByVisitorPage[nextPage];
+      setActiveGuideService(
+        nextIntent
+          ? guideServiceEntries.find((entry) => entry.id === nextIntent) ?? null
+          : null,
+      );
+      setServiceNarration(null);
+      window.scrollTo({ top: 0, behavior: "auto" });
+    };
+
+    window.addEventListener("hashchange", syncVisitorPage);
+    window.addEventListener("popstate", syncVisitorPage);
+    return () => {
+      window.removeEventListener("hashchange", syncVisitorPage);
+      window.removeEventListener("popstate", syncVisitorPage);
+    };
+  }, []);
 
   useEffect(() => {
     if (activeView === "admin") {
@@ -955,10 +1040,24 @@ export function App() {
 
   function openGuideService(intent: GuideIntent) {
     const matchedEntry = guideServiceEntries.find((entry) => entry.id === intent) ?? null;
+    const nextPage = visitorPageByGuideIntent[intent];
     setActiveGuideService(matchedEntry);
     setResponse(null);
     setServiceNarration(null);
     setError("");
+    navigateToVisitorPage(nextPage);
+  }
+
+  function navigateToVisitorPage(nextPage: VisitorPage) {
+    const nextHash = nextPage === "home" ? "" : `#${nextPage}`;
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+    window.history.pushState({ visitorPage: nextPage }, "", nextUrl);
+    setVisitorPage(nextPage);
+    if (nextPage === "home") {
+      setActiveGuideService(null);
+      setServiceNarration(null);
+    }
+    window.scrollTo({ top: 0, behavior: "auto" });
   }
 
   async function submitFeedback(rating: FeedbackRating) {
@@ -1287,19 +1386,33 @@ export function App() {
     setModelFilter("all");
   }
 
+  const isVisitorHome = visitorPage === "home";
+  const visitorIntent = guideIntentByVisitorPage[visitorPage];
+  const selectedVisitorPage = isVisitorHome ? null : visitorPageMeta[visitorPage];
+
   return (
-    <main className={activeView === "admin" ? "scenic-guide-page admin-page" : "scenic-guide-page"}>
-      {activeView === "chat" ? (
+    <main
+      className={
+        activeView === "admin"
+          ? "scenic-guide-page admin-page"
+          : `scenic-guide-page${isVisitorHome ? "" : " feature-page-active"}`
+      }
+    >
+      {activeView === "chat" && isVisitorHome ? (
         <ScenicStatusHeader
           activeView={activeView}
           onViewChange={setActiveView}
         />
       ) : null}
       <section
-        className={activeView === "admin" ? "main-layout admin-mode" : "main-layout"}
+        className={
+          activeView === "admin"
+            ? "main-layout admin-mode"
+            : `main-layout${isVisitorHome ? "" : " visitor-feature-layout"}`
+        }
       >
         <section
-          className="left-column"
+          className={`left-column digital-human-host${isVisitorHome ? " stage-host" : " pip-host"}`}
           aria-label="AI 数字人讲解台"
           hidden={activeView !== "chat"}
         >
@@ -1314,64 +1427,92 @@ export function App() {
             }
             isAnswerLoading={isLoading}
             refreshKey={digitalHumanRefreshKey}
-            />
-          </section>
+            mode={isVisitorHome ? "stage" : "pip"}
+            question={question}
+            isListening={isListening}
+            isRecognizing={isRecognizing}
+            onQuestionChange={setQuestion}
+            onSubmitQuestion={() => void askQuestion(question)}
+            onToggleListening={() => void toggleListening()}
+          />
+        </section>
 
         <section
-          className={activeView === "admin" ? "admin-column" : "right-column"}
-          aria-label={activeView === "chat" ? "游客问答" : "管理后台"}
+          className={
+            activeView === "admin"
+              ? "admin-column"
+              : `right-column${isVisitorHome ? "" : " visitor-feature-column"}`
+          }
+          aria-label={activeView === "chat" ? (isVisitorHome ? "游客问答" : "游客功能专页") : "管理后台"}
         >
 
           {activeView === "chat" ? (
-            <>
-              <GuideQuestionPanel
-                question={question}
-                isLoading={isLoading}
-                isListening={isListening}
-                isRecognizing={isRecognizing}
-                onQuestionChange={setQuestion}
-                onQuickQuestion={setQuestion}
-                onSubmit={submitQuestion}
-                onToggleListening={() => void toggleListening()}
-              />
-
-              {error ? <p className="error-message">{error}</p> : null}
-              {speechError ? <p className="error-message">{speechError}</p> : null}
-              {feedbackError && activeView === "chat" ? (
-                <p className="error-message">{feedbackError}</p>
-              ) : null}
-
-              {activeGuideService?.id === "route_guide" ||
-              activeGuideService?.id === "map_guide" ? (
-                <ScenicMapPanel
-                  defaultMode={activeGuideService.id}
-                  onNarrationChange={setServiceNarration}
+            isVisitorHome ? (
+              <>
+                <GuideQuestionPanel
+                  question={question}
+                  isLoading={isLoading}
+                  isListening={isListening}
+                  isRecognizing={isRecognizing}
+                  onQuestionChange={setQuestion}
+                  onQuickQuestion={setQuestion}
+                  onSubmit={submitQuestion}
+                  onToggleListening={() => void toggleListening()}
                 />
-              ) : null}
-              {activeGuideService?.id === "performance_time" ? (
-                <PerformanceSchedulePanel />
-              ) : null}
-              {activeGuideService?.id === "vr_guide" ? (
-                <PanoramaExperience onNarrationChange={setServiceNarration} />
-              ) : null}
-              <AnswerPreviewCard
-                response={response}
-                servicePreview={activeGuideService}
-                isLoading={isLoading}
-                feedbackStatus={feedbackStatus}
-                feedbackText={feedbackText}
-                isFeedbackNoteOpen={isFeedbackNoteOpen}
-                isSubmittingFeedback={isSubmittingFeedback}
-                onFeedback={(rating) => void submitFeedback(rating)}
-                onFeedbackTextChange={setFeedbackText}
-                onToggleFeedbackNote={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
-                onSubmitFeedbackNote={() => {
-                  if (feedbackStatus) {
-                    void submitFeedback(feedbackStatus.rating);
-                  }
-                }}
-              />
-            </>
+
+                {error ? <p className="error-message">{error}</p> : null}
+                {speechError ? <p className="error-message">{speechError}</p> : null}
+                {feedbackError && activeView === "chat" ? (
+                  <p className="error-message">{feedbackError}</p>
+                ) : null}
+
+                <AnswerPreviewCard
+                  response={response}
+                  servicePreview={activeGuideService}
+                  isLoading={isLoading}
+                  feedbackStatus={feedbackStatus}
+                  feedbackText={feedbackText}
+                  isFeedbackNoteOpen={isFeedbackNoteOpen}
+                  isSubmittingFeedback={isSubmittingFeedback}
+                  onFeedback={(rating) => void submitFeedback(rating)}
+                  onFeedbackTextChange={setFeedbackText}
+                  onToggleFeedbackNote={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
+                  onSubmitFeedbackNote={() => {
+                    if (feedbackStatus) {
+                      void submitFeedback(feedbackStatus.rating);
+                    }
+                  }}
+                />
+              </>
+            ) : (
+              <section className="visitor-feature-page" aria-label={selectedVisitorPage?.title}>
+                <button
+                  type="button"
+                  className="visitor-home-button visitor-home-floating"
+                  onClick={() => navigateToVisitorPage("home")}
+                >
+                  <ArrowLeft size={17} aria-hidden="true" />
+                  返回首页
+                </button>
+                {visitorPage === "map" ? (
+                  <div className="visitor-feature-content map-feature-content">
+                    <ScenicMapPanel
+                      defaultMode="map_guide"
+                      immersive
+                      onNarrationChange={setServiceNarration}
+                    />
+                  </div>
+                ) : (
+                  <div className="visitor-feature-placeholder">
+                    <strong>{selectedVisitorPage?.title}</strong>
+                    <p>页面框架已经接入，本专页内容将在对应独立功能分支中完成。</p>
+                  </div>
+                )}
+
+                {error ? <p className="error-message feature-error">{error}</p> : null}
+                {speechError ? <p className="error-message feature-error">{speechError}</p> : null}
+              </section>
+            )
           ) : (
             <section className="admin-console" aria-label="管理后台">
               <header className="admin-shell">
@@ -1847,11 +1988,11 @@ export function App() {
             </section>
           )}
         </section>
-        {activeView === "chat" ? (
+        {activeView === "chat" && isVisitorHome ? (
           <GuideServiceBar
             entries={guideServiceEntries}
             isLoading={isLoading}
-            activeIntent={activeGuideService?.id}
+            activeIntent={visitorIntent ?? activeGuideService?.id}
             onSelect={openGuideService}
           />
         ) : null}

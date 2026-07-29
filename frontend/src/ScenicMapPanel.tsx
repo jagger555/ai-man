@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
-import { LocateFixed, Navigation, Route } from "lucide-react";
+import type { FocusEvent, KeyboardEvent, RefObject } from "react";
+import {
+  ArrowDownUp,
+  ChevronRight,
+  Clock3,
+  Footprints,
+  Layers3,
+  LocateFixed,
+  MapPin,
+  Navigation,
+  Route,
+  Sparkles,
+} from "lucide-react";
 import scenicMapImage from "./assets/lingshan-map.png";
 
 declare global {
@@ -14,7 +25,6 @@ declare global {
 
 type AMapNamespace = {
   Map: new (container: HTMLElement, options: Record<string, unknown>) => AMapMap;
-  Walking?: new (options: Record<string, unknown>) => AMapWalking;
   AutoComplete?: new (options: Record<string, unknown>) => AMapAutoComplete;
   Geolocation?: new (options: Record<string, unknown>) => AMapGeolocation;
   TileLayer: AMapTileLayerFactory;
@@ -46,20 +56,6 @@ type AMapMap = {
     maxZoom?: number,
   ) => void;
 };
-type AMapWalking = {
-  search: {
-    (
-      points: Array<{ keyword: string; city: string }>,
-      callback: (status: string, result: unknown) => void,
-    ): void;
-    (
-      origin: [number, number],
-      destination: [number, number],
-      callback: (status: string, result: unknown) => void,
-    ): void;
-  };
-  clear?: () => void;
-};
 type AMapAutoComplete = {
   search: (
     keyword: string,
@@ -68,7 +64,17 @@ type AMapAutoComplete = {
   on?: (event: "select", callback: (payload: { poi?: AMapTip }) => void) => void;
 };
 type AMapGeolocation = {
-  getCurrentPosition: (callback: (status: string, result: unknown) => void) => void;
+  getCurrentPosition: (
+    callback: (status: string, result: AMapGeolocationResult | string) => void,
+  ) => void;
+};
+
+type AMapGeolocationResult = {
+  position?: {
+    lng?: number;
+    lat?: number;
+  };
+  formattedAddress?: string;
 };
 
 type AMapTip = {
@@ -103,7 +109,15 @@ type WalkingRouteResponse = {
   steps: WalkingRouteStep[];
 };
 
+type WalkingRouteSummary = {
+  start: string;
+  end: string;
+  distance: number;
+  duration: number;
+};
+
 type AmapDisplayMode = "standard" | "satellite" | "three" | "street";
+type MapLoadState = "loading" | "ready" | "error";
 
 const AMAP_JS_KEY = "0c91c46696371d408fe7c3df5acb44dd";
 const AMAP_SCRIPT_ID = "amap-js-api";
@@ -185,6 +199,22 @@ const LOCAL_NAVIGATION_SUGGESTIONS: AMapTip[] = [
   },
 ];
 
+const DEFAULT_START_TIP = LOCAL_NAVIGATION_SUGGESTIONS.find(
+  (tip) => tip.id === "local-tourist-center",
+) ?? LOCAL_NAVIGATION_SUGGESTIONS[0];
+const DEFAULT_END_TIP = LOCAL_NAVIGATION_SUGGESTIONS.find(
+  (tip) => tip.id === "local-lingshan-buddha",
+) ?? LOCAL_NAVIGATION_SUGGESTIONS[0];
+const QUICK_DESTINATION_IDS = [
+  "local-lingshan-buddha",
+  "local-jiulong",
+  "local-fangong",
+  "local-wuyin",
+];
+const QUICK_DESTINATIONS = QUICK_DESTINATION_IDS.map(
+  (id) => LOCAL_NAVIGATION_SUGGESTIONS.find((tip) => tip.id === id),
+).filter((tip): tip is AMapTip => Boolean(tip?.name));
+
 const scenicRoutes: ScenicRoute[] = [
   {
     id: "classic",
@@ -236,21 +266,49 @@ function loadAmapScript() {
   return new Promise<AMapNamespace>((resolve, reject) => {
     const existingScript = document.getElementById(AMAP_SCRIPT_ID) as HTMLScriptElement | null;
     if (existingScript) {
+      const readyState = (existingScript as HTMLScriptElement & { readyState?: string }).readyState;
+      if (
+        existingScript.dataset.amapLoaded === "true" ||
+        readyState === "complete" ||
+        readyState === "loaded"
+      ) {
+        existingScript.remove();
+        loadAmapScript().then(resolve, reject);
+        return;
+      }
       existingScript.addEventListener("load", () => {
-        window.AMap ? resolve(window.AMap) : reject(new Error("高德地图加载失败"));
+        existingScript.dataset.amapLoaded = "true";
+        if (window.AMap) {
+          resolve(window.AMap);
+        } else {
+          existingScript.remove();
+          reject(new Error("高德地图加载失败"));
+        }
       });
-      existingScript.addEventListener("error", () => reject(new Error("高德地图脚本加载失败")));
+      existingScript.addEventListener("error", () => {
+        existingScript.remove();
+        reject(new Error("高德地图脚本加载失败"));
+      });
       return;
     }
 
     const script = document.createElement("script");
     script.id = AMAP_SCRIPT_ID;
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_JS_KEY}&plugin=AMap.Geolocation,AMap.Walking,AMap.AutoComplete`;
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_JS_KEY}&plugin=AMap.Geolocation,AMap.AutoComplete`;
     script.async = true;
     script.onload = () => {
-      window.AMap ? resolve(window.AMap) : reject(new Error("高德地图加载失败"));
+      script.dataset.amapLoaded = "true";
+      if (window.AMap) {
+        resolve(window.AMap);
+      } else {
+        script.remove();
+        reject(new Error("高德地图加载失败"));
+      }
     };
-    script.onerror = () => reject(new Error("高德地图脚本加载失败"));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("高德地图脚本加载失败"));
+    };
     document.head.appendChild(script);
   });
 }
@@ -312,16 +370,6 @@ function getTipDetail(tip: AMapTip) {
   return detail.join(" · ");
 }
 
-function getRouteKeyword(input: string, tip: AMapTip | null) {
-  if (!tip?.name) {
-    return input.trim();
-  }
-
-  return [tip.name, tip.district, tip.address]
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    .join(" ");
-}
-
 function findLocalTip(input: string) {
   const normalizedInput = input.trim().toLowerCase();
   if (!normalizedInput) {
@@ -358,6 +406,55 @@ function getTipCoordinate(tip: AMapTip | null): [number, number] | null {
     : null;
 }
 
+function isSameRoutePoint(
+  startName: string,
+  endName: string,
+  startCoordinate: [number, number] | null,
+  endCoordinate: [number, number] | null,
+) {
+  if (startCoordinate && endCoordinate) {
+    return (
+      Math.abs(startCoordinate[0] - endCoordinate[0]) < 0.000001 &&
+      Math.abs(startCoordinate[1] - endCoordinate[1]) < 0.000001
+    );
+  }
+  return startName.trim().toLowerCase() === endName.trim().toLowerCase();
+}
+
+function buildAmapNavigationUrl(
+  startName: string,
+  endName: string,
+  startCoordinate: [number, number] | null,
+  endCoordinate: [number, number] | null,
+) {
+  if (!startCoordinate || !endCoordinate) {
+    return "";
+  }
+  const params = new URLSearchParams({
+    from: `${startCoordinate[0]},${startCoordinate[1]},${startName}`,
+    to: `${endCoordinate[0]},${endCoordinate[1]},${endName}`,
+    mode: "walk",
+    policy: "1",
+    src: "灵山智慧导览",
+    coordinate: "gaode",
+    callnative: "0",
+  });
+  return `https://uri.amap.com/navigation?${params.toString()}`;
+}
+
+function isWalkingRouteResponse(value: unknown): value is WalkingRouteResponse {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<WalkingRouteResponse>;
+  return (
+    typeof candidate.distance === "number" &&
+    typeof candidate.duration === "number" &&
+    Array.isArray(candidate.polyline) &&
+    Array.isArray(candidate.steps)
+  );
+}
+
 export function ScenicMapPanel({
   defaultMode,
   onNarrationChange,
@@ -369,27 +466,35 @@ export function ScenicMapPanel({
     defaultMode === "map_guide" ? "halfday" : "classic",
   );
   const [displayMode, setDisplayMode] = useState<AmapDisplayMode>("standard");
+  const [mapState, setMapState] = useState<MapLoadState>("loading");
+  const [mapRetryKey, setMapRetryKey] = useState(0);
   const [mapStatus, setMapStatus] = useState("正在加载高德地图...");
-  const [locationStatus, setLocationStatus] = useState("可点击 GPS 定位读取浏览器当前位置。");
-  const [routeStart, setRouteStart] = useState("");
-  const [routeEnd, setRouteEnd] = useState("");
-  const [selectedStartTip, setSelectedStartTip] = useState<AMapTip | null>(null);
-  const [selectedEndTip, setSelectedEndTip] = useState<AMapTip | null>(null);
+  const [locationStatus, setLocationStatus] = useState("未使用浏览器定位");
+  const [routeStart, setRouteStart] = useState(DEFAULT_START_TIP.name ?? "灵山胜境游客中心");
+  const [routeEnd, setRouteEnd] = useState(DEFAULT_END_TIP.name ?? "灵山胜境-灵山大佛");
+  const [selectedStartTip, setSelectedStartTip] = useState<AMapTip | null>(DEFAULT_START_TIP);
+  const [selectedEndTip, setSelectedEndTip] = useState<AMapTip | null>(DEFAULT_END_TIP);
   const [startSuggestions, setStartSuggestions] = useState<AMapTip[]>([]);
   const [endSuggestions, setEndSuggestions] = useState<AMapTip[]>([]);
   const [activeSuggestionField, setActiveSuggestionField] = useState<"start" | "end" | null>(null);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const [routePlanStatus, setRoutePlanStatus] = useState(
-    "输入起点和终点后，可在高德地图中规划步行路线。",
+    "已准备游客中心至灵山大佛路线，点击即可规划。",
   );
   const [routeSteps, setRouteSteps] = useState<WalkingRouteStep[]>([]);
+  const [routeSummary, setRouteSummary] = useState<WalkingRouteSummary | null>(null);
+  const [isPlanning, setIsPlanning] = useState(false);
   const [suggestionStatus, setSuggestionStatus] = useState("输入两个字以上可查看高德地点联想。");
+  const panelRef = useRef<HTMLElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const routePanelRef = useRef<HTMLDivElement | null>(null);
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const endInputRef = useRef<HTMLInputElement | null>(null);
   const mapRef = useRef<AMapMap | null>(null);
-  const walkingRef = useRef<AMapWalking | null>(null);
   const routePolylineRef = useRef<AMapOverlay | null>(null);
+  const routeRequestRef = useRef<AbortController | null>(null);
+  const routeRequestSeqRef = useRef(0);
+  const locationRequestSeqRef = useRef(0);
   const startAutoCompleteRef = useRef<AMapAutoComplete | null>(null);
   const endAutoCompleteRef = useRef<AMapAutoComplete | null>(null);
   const startSuggestionSeqRef = useRef(0);
@@ -404,6 +509,18 @@ export function ScenicMapPanel({
   }, [defaultMode]);
 
   useEffect(() => {
+    setActiveSuggestionIndex(0);
+  }, [activeSuggestionField, startSuggestions, endSuggestions]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      panelRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [defaultMode]);
+
+  useEffect(() => {
     if (defaultMode === "route_guide") {
       onNarrationChange?.({
         key: `route-${activeRoute.id}`,
@@ -413,6 +530,8 @@ export function ScenicMapPanel({
   }, [activeRoute, defaultMode, onNarrationChange]);
 
   useEffect(() => {
+    const sequence = startSuggestionSeqRef.current + 1;
+    startSuggestionSeqRef.current = sequence;
     if (defaultMode !== "map_guide") {
       return undefined;
     }
@@ -423,8 +542,6 @@ export function ScenicMapPanel({
       return undefined;
     }
 
-    const sequence = startSuggestionSeqRef.current + 1;
-    startSuggestionSeqRef.current = sequence;
     const timer = window.setTimeout(async () => {
       try {
         await loadAmapScript();
@@ -436,7 +553,6 @@ export function ScenicMapPanel({
         startAutoCompleteRef.current ??= new AMap.AutoComplete({
           city: ROUTE_CITY,
           citylimit: false,
-          input: startInputRef.current ?? undefined,
         });
         startAutoCompleteRef.current.search(keyword, (status, result) => {
           if (startSuggestionSeqRef.current !== sequence) {
@@ -447,6 +563,9 @@ export function ScenicMapPanel({
           setSuggestionStatus(tips.length > 0 ? "请选择准确地点后再规划路线。" : "未找到匹配地点，可补充更完整名称。");
         });
       } catch {
+        if (startSuggestionSeqRef.current !== sequence) {
+          return;
+        }
         const tips = getLocalSuggestions(keyword);
         setStartSuggestions(tips);
         setSuggestionStatus(tips.length > 0 ? "已显示景区内常用地点候选。" : "地点联想组件加载失败，请稍后重试。");
@@ -457,6 +576,8 @@ export function ScenicMapPanel({
   }, [defaultMode, routeStart, selectedStartTip]);
 
   useEffect(() => {
+    const sequence = endSuggestionSeqRef.current + 1;
+    endSuggestionSeqRef.current = sequence;
     if (defaultMode !== "map_guide") {
       return undefined;
     }
@@ -467,8 +588,6 @@ export function ScenicMapPanel({
       return undefined;
     }
 
-    const sequence = endSuggestionSeqRef.current + 1;
-    endSuggestionSeqRef.current = sequence;
     const timer = window.setTimeout(async () => {
       try {
         await loadAmapScript();
@@ -480,7 +599,6 @@ export function ScenicMapPanel({
         endAutoCompleteRef.current ??= new AMap.AutoComplete({
           city: ROUTE_CITY,
           citylimit: false,
-          input: endInputRef.current ?? undefined,
         });
         endAutoCompleteRef.current.search(keyword, (status, result) => {
           if (endSuggestionSeqRef.current !== sequence) {
@@ -491,6 +609,9 @@ export function ScenicMapPanel({
           setSuggestionStatus(tips.length > 0 ? "请选择准确地点后再规划路线。" : "未找到匹配地点，可补充更完整名称。");
         });
       } catch {
+        if (endSuggestionSeqRef.current !== sequence) {
+          return;
+        }
         const tips = getLocalSuggestions(keyword);
         setEndSuggestions(tips);
         setSuggestionStatus(tips.length > 0 ? "已显示景区内常用地点候选。" : "地点联想组件加载失败，请稍后重试。");
@@ -501,64 +622,14 @@ export function ScenicMapPanel({
   }, [defaultMode, routeEnd, selectedEndTip]);
 
   useEffect(() => {
-    if (defaultMode !== "map_guide") {
-      return undefined;
-    }
-
-    let disposed = false;
-    async function bindInputAutocomplete() {
-      try {
-        const AMap = await loadAmapScript();
-        await loadAmapPlugin("AMap.AutoComplete");
-        if (disposed || !AMap.AutoComplete) {
-          return;
-        }
-
-        if (!startAutoCompleteRef.current && startInputRef.current) {
-          const startAutoComplete = new AMap.AutoComplete({
-            city: ROUTE_CITY,
-            citylimit: false,
-            input: startInputRef.current,
-          });
-          startAutoComplete.on?.("select", ({ poi }) => {
-            if (poi?.name) {
-              selectRouteSuggestion("start", poi);
-            }
-          });
-          startAutoCompleteRef.current = startAutoComplete;
-        }
-
-        if (!endAutoCompleteRef.current && endInputRef.current) {
-          const endAutoComplete = new AMap.AutoComplete({
-            city: ROUTE_CITY,
-            citylimit: false,
-            input: endInputRef.current,
-          });
-          endAutoComplete.on?.("select", ({ poi }) => {
-            if (poi?.name) {
-              selectRouteSuggestion("end", poi);
-            }
-          });
-          endAutoCompleteRef.current = endAutoComplete;
-        }
-      } catch {
-        setSuggestionStatus("地点联想组件加载失败，请稍后重试。");
-      }
-    }
-
-    void bindInputAutocomplete();
-    return () => {
-      disposed = true;
-    };
-  }, [defaultMode]);
-
-  useEffect(() => {
     let disposed = false;
     if (defaultMode !== "map_guide") {
       return undefined;
     }
 
     async function initMap() {
+      setMapState("loading");
+      setMapStatus("正在连接高德地图服务...");
       try {
         const AMap = await loadAmapScript();
         if (disposed || !mapContainerRef.current) {
@@ -568,13 +639,19 @@ export function ScenicMapPanel({
         const map = new AMap.Map(mapContainerRef.current, {
           center: LINGSHAN_CENTER,
           zoom: 15,
-          viewMode: "2D",
+          viewMode: "3D",
           resizeEnable: true,
         });
         mapRef.current = map;
 
+        setDisplayMode("standard");
+        setMapState("ready");
         setMapStatus("高德地图已加载，可拖拽缩放并切换地图类型。");
       } catch (error) {
+        if (disposed) {
+          return;
+        }
+        setMapState("error");
         setMapStatus(error instanceof Error ? error.message : "高德地图加载失败");
       }
     }
@@ -582,8 +659,9 @@ export function ScenicMapPanel({
     void initMap();
     return () => {
       disposed = true;
-      walkingRef.current?.clear?.();
-      walkingRef.current = null;
+      routeRequestSeqRef.current += 1;
+      routeRequestRef.current?.abort();
+      routeRequestRef.current = null;
       if (routePolylineRef.current && mapRef.current) {
         mapRef.current.remove(routePolylineRef.current);
       }
@@ -591,15 +669,40 @@ export function ScenicMapPanel({
       mapRef.current?.destroy();
       mapRef.current = null;
     };
-  }, [defaultMode]);
+  }, [defaultMode, mapRetryKey]);
+
+  function clearRenderedRoute() {
+    routeRequestSeqRef.current += 1;
+    routeRequestRef.current?.abort();
+    routeRequestRef.current = null;
+    if (routePolylineRef.current && mapRef.current) {
+      mapRef.current.remove(routePolylineRef.current);
+    }
+    routePolylineRef.current = null;
+    setRouteSummary(null);
+    setRouteSteps([]);
+    setIsPlanning(false);
+  }
+
+  function invalidateRoute(reason: string) {
+    clearRenderedRoute();
+    setRoutePlanStatus(reason);
+  }
+
+  function retryMapLoad() {
+    invalidateRoute("地图正在重新连接，请稍候。");
+    setMapRetryKey((value) => value + 1);
+  }
 
   function locateWithAmap() {
     const AMap = window.AMap;
-    if (!AMap?.Geolocation || !mapRef.current) {
-      setLocationStatus("定位组件尚未加载完成。");
+    if (mapState !== "ready" || !AMap?.Geolocation || !mapRef.current) {
+      setLocationStatus("地图尚未就绪，暂时无法定位");
       return;
     }
 
+    const locationSequence = locationRequestSeqRef.current + 1;
+    locationRequestSeqRef.current = locationSequence;
     const geolocation = new AMap.Geolocation({
       enableHighAccuracy: true,
       timeout: 8000,
@@ -607,22 +710,45 @@ export function ScenicMapPanel({
     });
     mapRef.current.addControl(geolocation);
     setLocationStatus("正在通过高德地图读取当前位置...");
-    geolocation.getCurrentPosition((status) => {
-      setLocationStatus(
-        status === "complete"
-          ? "已读取当前位置，并在高德地图中定位。"
-          : "无法读取当前位置，请检查浏览器定位权限。",
-      );
+    geolocation.getCurrentPosition((status, result) => {
+      if (locationRequestSeqRef.current !== locationSequence) {
+        return;
+      }
+      if (status !== "complete" || typeof result === "string") {
+        setLocationStatus("定位失败，请检查浏览器定位权限");
+        return;
+      }
+
+      const lng = result.position?.lng;
+      const lat = result.position?.lat;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        setLocationStatus("已获得定位结果，但坐标不可用");
+        return;
+      }
+
+      const currentLocationTip: AMapTip = {
+        id: "browser-current-location",
+        name: "我的位置",
+        district: result.formattedAddress || "浏览器实时定位",
+        location: [lng as number, lat as number],
+      };
+      invalidateRoute("当前位置已设为起点，请选择目的地后重新规划。");
+      setRouteStart("我的位置");
+      setSelectedStartTip(currentLocationTip);
+      setLocationStatus("定位成功，已设为路线起点");
     });
   }
 
   function handleRouteStartChange(value: string) {
+    locationRequestSeqRef.current += 1;
+    invalidateRoute("起点已变化，请从候选中确认后重新规划。");
     setRouteStart(value);
     setSelectedStartTip(null);
     setActiveSuggestionField("start");
   }
 
   function handleRouteEndChange(value: string) {
+    invalidateRoute("终点已变化，请从候选中确认后重新规划。");
     setRouteEnd(value);
     setSelectedEndTip(null);
     setActiveSuggestionField("end");
@@ -634,7 +760,9 @@ export function ScenicMapPanel({
       return;
     }
 
+    invalidateRoute(`${field === "start" ? "起点" : "终点"}已更新，请重新规划路线。`);
     if (field === "start") {
+      locationRequestSeqRef.current += 1;
       setRouteStart(name);
       setSelectedStartTip(tip);
       setStartSuggestions([]);
@@ -648,105 +776,165 @@ export function ScenicMapPanel({
     setActiveSuggestionField(null);
   }
 
+  function swapRoutePoints() {
+    locationRequestSeqRef.current += 1;
+    invalidateRoute("已交换起点和终点，请重新规划路线。");
+    setRouteStart(routeEnd);
+    setRouteEnd(routeStart);
+    setSelectedStartTip(selectedEndTip);
+    setSelectedEndTip(selectedStartTip);
+    setStartSuggestions([]);
+    setEndSuggestions([]);
+  }
+
+  function selectQuickDestination(tip: AMapTip) {
+    const name = tip.name?.trim();
+    if (!name) {
+      return;
+    }
+    invalidateRoute(`已选择${name}，请重新规划步行路线。`);
+    setRouteEnd(name);
+    setSelectedEndTip(tip);
+    setEndSuggestions([]);
+  }
+
+  function handleSuggestionKeyDown(
+    field: "start" | "end",
+    event: KeyboardEvent<HTMLInputElement>,
+  ) {
+    const suggestions = field === "start" ? startSuggestions : endSuggestions;
+    if (event.key === "Escape") {
+      setActiveSuggestionField(null);
+      return;
+    }
+    if (suggestions.length === 0) {
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSuggestionField(field);
+      setActiveSuggestionIndex((index) => (index + 1) % suggestions.length);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSuggestionField(field);
+      setActiveSuggestionIndex((index) => (index - 1 + suggestions.length) % suggestions.length);
+      return;
+    }
+    if (event.key === "Enter" && activeSuggestionField === field) {
+      const suggestion = suggestions[activeSuggestionIndex];
+      if (suggestion) {
+        event.preventDefault();
+        selectRouteSuggestion(field, suggestion);
+      }
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void planWalkingRoute();
+    }
+  }
+
   async function planWalkingRoute() {
     const startTip = selectedStartTip ?? findLocalTip(routeStart);
     const endTip = selectedEndTip ?? findLocalTip(routeEnd);
-    const startKeyword = getRouteKeyword(routeStart, startTip);
-    const endKeyword = getRouteKeyword(routeEnd, endTip);
-    if (!startKeyword || !endKeyword) {
+    const startName = routeStart.trim();
+    const endName = routeEnd.trim();
+    if (!startName || !endName) {
       setRoutePlanStatus("请先输入起点和终点。");
       return;
     }
-
-    if (!mapRef.current) {
+    const startCoordinate = getTipCoordinate(startTip);
+    const endCoordinate = getTipCoordinate(endTip);
+    if (!startCoordinate || !endCoordinate) {
+      setRoutePlanStatus("请从地点候选中确认带坐标的起点和终点。");
+      return;
+    }
+    if (isSameRoutePoint(startName, endName, startCoordinate, endCoordinate)) {
+      setRoutePlanStatus("起点和终点不能相同，请重新选择。");
+      return;
+    }
+    if (mapState !== "ready" || !mapRef.current) {
       setRoutePlanStatus("地图尚未加载完成，请稍后再试。");
       return;
     }
 
+    clearRenderedRoute();
+    const requestSequence = routeRequestSeqRef.current;
+    const controller = new AbortController();
+    routeRequestRef.current = controller;
+    setIsPlanning(true);
+    setRoutePlanStatus(`正在规划：${startName} → ${endName}`);
     try {
-      walkingRef.current?.clear?.();
-      walkingRef.current = null;
-      if (routePolylineRef.current) {
-        mapRef.current.remove(routePolylineRef.current);
-        routePolylineRef.current = null;
-      }
-      setRouteSteps([]);
-      setRoutePlanStatus(`正在规划：${startKeyword} → ${endKeyword}`);
-      const startCoordinate = getTipCoordinate(startTip);
-      const endCoordinate = getTipCoordinate(endTip);
-      if (startCoordinate && endCoordinate) {
-        const AMap = await loadAmapScript();
-        const response = await fetch("/api/navigation/walking", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            origin: { lng: startCoordinate[0], lat: startCoordinate[1] },
-            destination: { lng: endCoordinate[0], lat: endCoordinate[1] },
-          }),
-        });
-        if (!response.ok) {
-          const errorPayload = (await response.json().catch(() => null)) as { detail?: string } | null;
-          throw new Error(errorPayload?.detail || "路线服务暂时不可用");
-        }
-
-        const route = (await response.json()) as WalkingRouteResponse;
-        if (!Array.isArray(route.polyline) || route.polyline.length < 2) {
-          throw new Error("高德未返回可绘制的步行路线");
-        }
-        const polyline = new AMap.Polyline({
-          path: route.polyline,
-          strokeColor: "#167a6a",
-          strokeWeight: 7,
-          strokeOpacity: 0.9,
-          lineJoin: "round",
-          lineCap: "round",
-          showDir: true,
-        });
-        mapRef.current.add(polyline);
-        mapRef.current.setFitView([polyline], false, [56, 56, 56, 56], 17);
-        routePolylineRef.current = polyline;
-        setRouteSteps(route.steps ?? []);
-        const minutes = Math.max(1, Math.round((route.duration || 0) / 60));
-        setRoutePlanStatus(
-          `已规划：${routeStart.trim()} → ${routeEnd.trim()}，约 ${route.distance} 米 / ${minutes} 分钟。`,
-        );
-        return;
-      }
-
-      const AMap = await loadAmapPlugin("AMap.Walking");
-      if (!AMap.Walking || !mapRef.current) {
-        setRoutePlanStatus("步行路线规划组件尚未加载完成。");
-        return;
-      }
-      walkingRef.current = new AMap.Walking({
-        map: mapRef.current,
-        panel: routePanelRef.current ?? undefined,
+      const AMap = await loadAmapScript();
+      const response = await fetch("/api/navigation/walking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          origin: { lng: startCoordinate[0], lat: startCoordinate[1] },
+          destination: { lng: endCoordinate[0], lat: endCoordinate[1] },
+        }),
       });
-      const handleRouteResult = (status: string, result: unknown) => {
-        if (status === "complete") {
-          setRoutePlanStatus(`已规划：${routeStart.trim()} → ${routeEnd.trim()}`);
-          return;
-        }
+      if (requestSequence !== routeRequestSeqRef.current || controller.signal.aborted) {
+        return;
+      }
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => null)) as { detail?: string } | null;
+        throw new Error(errorPayload?.detail || "路线服务暂时不可用");
+      }
 
-        const info =
-          typeof result === "string"
-            ? result
-            : typeof result === "object" && result && "info" in result
-              ? String((result as { info?: unknown }).info ?? "")
-              : "";
-        setRoutePlanStatus(
-          `路线规划失败${info ? `（${info}）` : ""}，请从地点候选中选择准确地点后重试。`,
-        );
-      };
-      walkingRef.current.search(
-        [
-          { keyword: startKeyword, city: startTip?.adcode || ROUTE_CITY },
-          { keyword: endKeyword, city: endTip?.adcode || ROUTE_CITY },
-        ],
-        handleRouteResult,
+      const route: unknown = await response.json();
+      if (requestSequence !== routeRequestSeqRef.current || controller.signal.aborted) {
+        return;
+      }
+      if (!isWalkingRouteResponse(route) || route.polyline.length < 2) {
+        throw new Error("高德未返回可绘制的步行路线");
+      }
+      const map = mapRef.current;
+      if (!map) {
+        throw new Error("地图已断开，请重新连接后规划。");
+      }
+      const polyline = new AMap.Polyline({
+        path: route.polyline,
+        strokeColor: "#167a6a",
+        strokeWeight: 7,
+        strokeOpacity: 0.9,
+        lineJoin: "round",
+        lineCap: "round",
+        showDir: true,
+      });
+      map.add(polyline);
+      map.setFitView([polyline], false, [56, 56, 56, 56], 17);
+      routePolylineRef.current = polyline;
+      setRouteSteps(route.steps);
+      setRouteSummary({
+        start: startName,
+        end: endName,
+        distance: route.distance,
+        duration: route.duration,
+      });
+      const minutes = Math.max(1, Math.round((route.duration || 0) / 60));
+      setRoutePlanStatus(
+        `路线已生成：约 ${route.distance} 米 / ${minutes} 分钟，现场请留意开放区域。`,
       );
     } catch (error) {
+      if (
+        requestSequence !== routeRequestSeqRef.current ||
+        (error instanceof DOMException && error.name === "AbortError")
+      ) {
+        return;
+      }
       setRoutePlanStatus(error instanceof Error ? error.message : "路线规划组件加载失败");
+    } finally {
+      if (
+        requestSequence === routeRequestSeqRef.current &&
+        routeRequestRef.current === controller
+      ) {
+        routeRequestRef.current = null;
+        setIsPlanning(false);
+      }
     }
   }
 
@@ -755,17 +943,19 @@ export function ScenicMapPanel({
       <RouteGuideView
         activeRoute={activeRoute}
         onRouteChange={setActiveRouteId}
+        panelRef={panelRef}
       />
     );
   }
 
   function applyDisplayMode(nextMode: AmapDisplayMode) {
-    setDisplayMode(nextMode);
     const AMap = window.AMap;
     const map = mapRef.current;
-    if (!AMap || !map) {
+    if (mapState !== "ready" || !AMap || !map) {
+      setMapStatus("地图尚未就绪，暂时无法切换图层。");
       return;
     }
+    setDisplayMode(nextMode);
 
     if (nextMode === "standard") {
       map.setLayers([new AMap.TileLayer()]);
@@ -800,14 +990,37 @@ export function ScenicMapPanel({
     map.setZoom(17);
     map.setPitch(70);
     map.setRotation(-22);
-    setMapStatus("高德 JS API 2.0 不提供独立街景图层；当前使用卫星实景 + 3D 倾斜视角模拟实景查看。");
+    setMapStatus("已切换为卫星底图倾斜视角；这不是街景或倾斜摄影模型。");
   }
+
+  const currentStartTip = selectedStartTip ?? findLocalTip(routeStart);
+  const currentEndTip = selectedEndTip ?? findLocalTip(routeEnd);
+  const currentStartCoordinate = getTipCoordinate(currentStartTip);
+  const currentEndCoordinate = getTipCoordinate(currentEndTip);
+  const canPlanRoute = Boolean(
+    mapState === "ready" &&
+    routeStart.trim() &&
+    routeEnd.trim() &&
+    currentStartCoordinate &&
+    currentEndCoordinate,
+  );
+  const amapNavigationUrl = routeSummary
+    ? buildAmapNavigationUrl(
+        routeSummary.start,
+        routeSummary.end,
+        currentStartCoordinate,
+        currentEndCoordinate,
+      )
+    : "";
 
   return (
     <AmapNavigationView
+      activeSuggestionIndex={activeSuggestionIndex}
       displayMode={displayMode}
       locationStatus={locationStatus}
       mapContainerRef={mapContainerRef}
+      mapState={mapState}
+      panelRef={panelRef}
       mapStatus={mapStatus}
       activeSuggestionField={activeSuggestionField}
       routeEnd={routeEnd}
@@ -815,18 +1028,29 @@ export function ScenicMapPanel({
       routePanelRef={routePanelRef}
       routePlanStatus={routePlanStatus}
       routeSteps={routeSteps}
+      routeSummary={routeSummary}
       routeStart={routeStart}
       routeStartSuggestions={startSuggestions}
       endInputRef={endInputRef}
       startInputRef={startInputRef}
       suggestionStatus={suggestionStatus}
+      isPlanning={isPlanning}
+      canPlan={canPlanRoute}
+      amapNavigationUrl={amapNavigationUrl}
       onDisplayModeChange={applyDisplayMode}
       onLocate={locateWithAmap}
+      onQuickDestination={selectQuickDestination}
+      onRetryMap={retryMapLoad}
       onRouteEndChange={handleRouteEndChange}
       onRoutePlan={planWalkingRoute}
       onRouteStartChange={handleRouteStartChange}
-      onSuggestionBlur={() => window.setTimeout(() => setActiveSuggestionField(null), 160)}
-      onSuggestionFocus={setActiveSuggestionField}
+      onSwapRoutePoints={swapRoutePoints}
+      onSuggestionBlur={() => setActiveSuggestionField(null)}
+      onSuggestionFocus={(field) => {
+        setActiveSuggestionField(field);
+        setActiveSuggestionIndex(0);
+      }}
+      onSuggestionKeyDown={handleSuggestionKeyDown}
       onSuggestionSelect={selectRouteSuggestion}
     />
   );
@@ -835,12 +1059,14 @@ export function ScenicMapPanel({
 function RouteGuideView({
   activeRoute,
   onRouteChange,
+  panelRef,
 }: {
   activeRoute: ScenicRoute;
   onRouteChange: (routeId: string) => void;
+  panelRef: RefObject<HTMLElement | null>;
 }) {
   return (
-    <section className="scenic-map-panel" aria-label="景区地图与路线规划">
+    <section ref={panelRef} className="scenic-map-panel" aria-label="景区地图与路线规划">
       <div className="scenic-map-head">
         <div>
           <p className="eyebrow">SCENIC MAP</p>
@@ -899,188 +1125,365 @@ function RouteGuideView({
   );
 }
 
+function formatRouteDistance(distance: number) {
+  if (distance < 1000) {
+    return `${Math.max(0, Math.round(distance))} 米`;
+  }
+  return `${(distance / 1000).toFixed(1)} 公里`;
+}
+
+function formatRouteDuration(duration: number) {
+  return `${Math.max(1, Math.round(duration / 60))} 分钟`;
+}
+
 function AmapNavigationView({
+  activeSuggestionIndex,
   activeSuggestionField,
+  amapNavigationUrl,
+  canPlan,
   displayMode,
+  endInputRef,
+  isPlanning,
   locationStatus,
   mapContainerRef,
+  mapState,
   mapStatus,
-  routeEnd,
-  routeEndSuggestions,
-  routePanelRef,
-  routePlanStatus,
-  routeSteps,
-  routeStart,
-  routeStartSuggestions,
-  endInputRef,
-  startInputRef,
-  suggestionStatus,
+  panelRef,
   onDisplayModeChange,
   onLocate,
+  onQuickDestination,
+  onRetryMap,
   onRouteEndChange,
   onRoutePlan,
   onRouteStartChange,
   onSuggestionBlur,
   onSuggestionFocus,
+  onSuggestionKeyDown,
   onSuggestionSelect,
+  onSwapRoutePoints,
+  routeEnd,
+  routeEndSuggestions,
+  routePanelRef,
+  routePlanStatus,
+  routeStart,
+  routeStartSuggestions,
+  routeSteps,
+  routeSummary,
+  startInputRef,
+  suggestionStatus,
 }: {
+  activeSuggestionIndex: number;
   activeSuggestionField: "start" | "end" | null;
+  amapNavigationUrl: string;
+  canPlan: boolean;
   displayMode: AmapDisplayMode;
+  endInputRef: RefObject<HTMLInputElement | null>;
+  isPlanning: boolean;
   locationStatus: string;
   mapContainerRef: RefObject<HTMLDivElement | null>;
+  mapState: MapLoadState;
   mapStatus: string;
-  routeEnd: string;
-  routeEndSuggestions: AMapTip[];
-  routePanelRef: RefObject<HTMLDivElement | null>;
-  routePlanStatus: string;
-  routeSteps: WalkingRouteStep[];
-  routeStart: string;
-  routeStartSuggestions: AMapTip[];
-  endInputRef: RefObject<HTMLInputElement | null>;
-  startInputRef: RefObject<HTMLInputElement | null>;
-  suggestionStatus: string;
+  panelRef: RefObject<HTMLElement | null>;
   onDisplayModeChange: (mode: AmapDisplayMode) => void;
   onLocate: () => void;
+  onQuickDestination: (tip: AMapTip) => void;
+  onRetryMap: () => void;
   onRouteEndChange: (value: string) => void;
   onRoutePlan: () => void;
   onRouteStartChange: (value: string) => void;
   onSuggestionBlur: () => void;
   onSuggestionFocus: (field: "start" | "end") => void;
+  onSuggestionKeyDown: (field: "start" | "end", event: KeyboardEvent<HTMLInputElement>) => void;
   onSuggestionSelect: (field: "start" | "end", tip: AMapTip) => void;
+  onSwapRoutePoints: () => void;
+  routeEnd: string;
+  routeEndSuggestions: AMapTip[];
+  routePanelRef: RefObject<HTMLDivElement | null>;
+  routePlanStatus: string;
+  routeStart: string;
+  routeStartSuggestions: AMapTip[];
+  routeSteps: WalkingRouteStep[];
+  routeSummary: WalkingRouteSummary | null;
+  startInputRef: RefObject<HTMLInputElement | null>;
+  suggestionStatus: string;
 }) {
   const displayModes: Array<{ id: AmapDisplayMode; label: string }> = [
-    { id: "standard", label: "标准图" },
-    { id: "satellite", label: "卫星图" },
-    { id: "three", label: "3D 图" },
-    { id: "street", label: "实景模式" },
+    { id: "standard", label: "标准" },
+    { id: "satellite", label: "卫星" },
+    { id: "three", label: "3D" },
+    { id: "street", label: "卫星倾斜" },
   ];
+  const providerLabel =
+    mapState === "ready"
+      ? "高德地图可用"
+      : mapState === "error"
+        ? "高德地图暂不可用"
+        : "正在连接高德地图";
 
-  return (
-    <section className="scenic-map-panel" aria-label="高德地图导航">
-      <div className="scenic-map-head">
-        <div>
-          <p className="eyebrow">AMAP NAVIGATION</p>
-          <h3>实时地图导航</h3>
-          <span>起终点路线规划、地图模式和实时 GPS</span>
-        </div>
-        <div className="map-head-actions">
-          <button type="button" className="secondary-action" onClick={onLocate}>
-            <LocateFixed size={16} aria-hidden="true" />
-            GPS 定位
-          </button>
-        </div>
-      </div>
-
-      <div className="map-mode-tabs" aria-label="地图类型">
-        {displayModes.map((mode) => (
+  function renderSuggestions(field: "start" | "end", suggestions: AMapTip[]) {
+    if (activeSuggestionField !== field || suggestions.length === 0) {
+      return null;
+    }
+    const listId = `amap-${field}-suggestions`;
+    return (
+      <div id={listId} className="amap-suggestions" role="listbox" aria-label={`${field === "start" ? "起点" : "终点"}地点候选`}>
+        {suggestions.map((tip, index) => (
           <button
-            key={mode.id}
+            id={`${listId}-${index}`}
+            key={`${tip.id || tip.name || field}-${index}`}
             type="button"
-            className={mode.id === displayMode ? "active" : ""}
-            onClick={() => onDisplayModeChange(mode.id)}
+            role="option"
+            aria-selected={index === activeSuggestionIndex}
+            tabIndex={-1}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onSuggestionSelect(field, tip)}
           >
-            {mode.label}
+            <MapPin size={15} aria-hidden="true" />
+            <span>
+              <strong>{tip.name}</strong>
+              <small>{getTipDetail(tip) || "高德地点候选"}</small>
+            </span>
           </button>
         ))}
       </div>
+    );
+  }
 
-      <form
-        className="amap-route-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onRoutePlan();
-        }}
-      >
-        <label className="amap-search-field">
-          <span>起点</span>
-          <input
-            ref={startInputRef}
-            type="text"
-            value={routeStart}
-            onChange={(event) => onRouteStartChange(event.target.value)}
-            onFocus={() => onSuggestionFocus("start")}
-            onBlur={onSuggestionBlur}
-            placeholder="输入起点，如 灵山胜境游客中心"
-            autoComplete="off"
-          />
-          {activeSuggestionField === "start" && routeStartSuggestions.length > 0 ? (
-            <div className="amap-suggestions" role="listbox">
-              {routeStartSuggestions.map((tip, index) => (
-                <button
-                  key={`${tip.id || tip.name || "start"}-${index}`}
-                  type="button"
-                  role="option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => onSuggestionSelect("start", tip)}
-                >
-                  <strong>{tip.name}</strong>
-                  <small>{getTipDetail(tip) || "高德地点候选"}</small>
-                </button>
-              ))}
+  function handleFieldBlur(event: FocusEvent<HTMLDivElement>) {
+    const nextTarget = event.relatedTarget;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget as Node)) {
+      onSuggestionBlur();
+    }
+  }
+
+  return (
+    <section ref={panelRef} className="scenic-map-panel amap-product-panel" aria-label="高德地图步行路线规划">
+      <div className="scenic-map-head amap-product-head">
+        <div>
+          <p className="eyebrow">AMAP · LINGSHAN</p>
+          <h3>灵山景区步行路线规划</h3>
+          <span>选目的地、看路线总览，需要持续导航时交接高德地图</span>
+        </div>
+        <div className={`amap-provider-badge ${mapState}`}>
+          <span className="provider-pulse" aria-hidden="true" />
+          {providerLabel}
+        </div>
+      </div>
+
+      <div className="amap-product-shell">
+        <aside className="amap-route-planner" aria-label="路线规划器">
+          <div className="planner-mode-row">
+            <span><Footprints size={16} aria-hidden="true" /> 景区步行</span>
+            <em><Sparkles size={13} aria-hidden="true" /> 推荐方式</em>
+          </div>
+
+          <form
+            className="amap-route-form product-route-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onRoutePlan();
+            }}
+          >
+            <div className="route-point-stack">
+              <div className="amap-search-field start-point-field" onBlur={handleFieldBlur}>
+                <label htmlFor="amap-route-start">从</label>
+                <input
+                  id="amap-route-start"
+                  ref={startInputRef}
+                  type="text"
+                  value={routeStart}
+                  onChange={(event) => onRouteStartChange(event.target.value)}
+                  onFocus={() => onSuggestionFocus("start")}
+                  onKeyDown={(event) => onSuggestionKeyDown("start", event)}
+                  placeholder="输入或定位起点"
+                  autoComplete="off"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={activeSuggestionField === "start" && routeStartSuggestions.length > 0}
+                  aria-controls="amap-start-suggestions"
+                  aria-activedescendant={
+                    activeSuggestionField === "start" && routeStartSuggestions.length > 0
+                      ? `amap-start-suggestions-${activeSuggestionIndex}`
+                      : undefined
+                  }
+                />
+                {renderSuggestions("start", routeStartSuggestions)}
+              </div>
+
+              <button
+                type="button"
+                className="route-swap-button"
+                onClick={onSwapRoutePoints}
+                aria-label="交换起点和终点"
+              >
+                <ArrowDownUp size={16} aria-hidden="true" />
+              </button>
+
+              <div className="amap-search-field end-point-field" onBlur={handleFieldBlur}>
+                <label htmlFor="amap-route-end">到</label>
+                <input
+                  id="amap-route-end"
+                  ref={endInputRef}
+                  type="text"
+                  value={routeEnd}
+                  onChange={(event) => onRouteEndChange(event.target.value)}
+                  onFocus={() => onSuggestionFocus("end")}
+                  onKeyDown={(event) => onSuggestionKeyDown("end", event)}
+                  placeholder="搜索景点或服务设施"
+                  autoComplete="off"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={activeSuggestionField === "end" && routeEndSuggestions.length > 0}
+                  aria-controls="amap-end-suggestions"
+                  aria-activedescendant={
+                    activeSuggestionField === "end" && routeEndSuggestions.length > 0
+                      ? `amap-end-suggestions-${activeSuggestionIndex}`
+                      : undefined
+                  }
+                />
+                {renderSuggestions("end", routeEndSuggestions)}
+              </div>
+            </div>
+
+            <div className="quick-destination-block">
+              <span>热门目的地</span>
+              <div className="quick-destination-list">
+                {QUICK_DESTINATIONS.map((tip) => (
+                  <button
+                    key={tip.id}
+                    type="button"
+                    className={routeEnd === tip.name ? "active" : ""}
+                    onClick={() => onQuickDestination(tip)}
+                    aria-pressed={routeEnd === tip.name}
+                  >
+                    {tip.name?.replace("灵山胜境-", "")}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button type="submit" className="primary-action route-plan-button" disabled={!canPlan || isPlanning}>
+              <Navigation size={17} className={isPlanning ? "spin" : ""} aria-hidden="true" />
+              {isPlanning ? "正在规划" : "生成步行路线"}
+            </button>
+          </form>
+
+          <section className="route-overview-card" aria-label="路线总览">
+            {routeSummary ? (
+              <>
+                <div className="route-overview-head">
+                  <div>
+                    <span>预计步行</span>
+                    <strong>{formatRouteDuration(routeSummary.duration)}</strong>
+                  </div>
+                  <b>{formatRouteDistance(routeSummary.distance)}</b>
+                </div>
+                <div className="route-overview-points">
+                  <span>{routeSummary.start}</span>
+                  <ChevronRight size={14} aria-hidden="true" />
+                  <span>{routeSummary.end}</span>
+                </div>
+                {amapNavigationUrl ? (
+                  <a
+                    className="amap-handoff-link"
+                    href={amapNavigationUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Navigation size={14} aria-hidden="true" />
+                    在高德地图中继续导航
+                  </a>
+                ) : null}
+                <small className="route-safety-note">路线仅供步行参考，以景区现场开放区域和指示为准。</small>
+              </>
+            ) : (
+              <div className="route-overview-empty">
+                <Route size={20} aria-hidden="true" />
+                <div>
+                  <strong>一键查看路线总览</strong>
+                  <span>{routePlanStatus}</span>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <section className="product-route-steps" aria-label="步行路线步骤">
+            <div className="route-step-head">
+              <strong>路线步骤</strong>
+              <span>{routeSteps.length > 0 ? `${routeSteps.length} 段` : "等待规划"}</span>
+            </div>
+            <div ref={routePanelRef} className="amap-route-result">
+              {routeSteps.length > 0 ? (
+                <ol>
+                  {routeSteps.map((step, index) => (
+                    <li key={`${step.instruction}-${index}`}>
+                      <i>{index + 1}</i>
+                      <div>
+                        <span>{step.instruction}</span>
+                        <small>
+                          {step.distance > 0 ? `${step.distance} 米` : "继续步行"}
+                          {step.duration > 0 ? ` · ${formatRouteDuration(step.duration)}` : ""}
+                        </small>
+                      </div>
+                      <ChevronRight size={14} aria-hidden="true" />
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p>路线生成后，将在这里按顺序展示高德步行指引。</p>
+              )}
+            </div>
+          </section>
+        </aside>
+
+        <section className="amap-map-stage" aria-label="高德实时地图">
+          <div ref={mapContainerRef} className="amap-container" />
+
+          {mapState !== "ready" ? (
+            <div className={`map-load-panel ${mapState}`} role={mapState === "error" ? "alert" : "status"}>
+              <div className="map-load-icon">
+                <Layers3 size={23} className={mapState === "loading" ? "spin" : ""} aria-hidden="true" />
+              </div>
+              <strong>{providerLabel}</strong>
+              <span>{mapStatus}</span>
+              {mapState === "error" ? (
+                <button type="button" onClick={onRetryMap}>重新连接地图</button>
+              ) : null}
             </div>
           ) : null}
-        </label>
-        <label className="amap-search-field">
-          <span>终点</span>
-          <input
-            ref={endInputRef}
-            type="text"
-            value={routeEnd}
-            onChange={(event) => onRouteEndChange(event.target.value)}
-            onFocus={() => onSuggestionFocus("end")}
-            onBlur={onSuggestionBlur}
-            placeholder="输入终点，如 灵山大佛"
-            autoComplete="off"
-          />
-          {activeSuggestionField === "end" && routeEndSuggestions.length > 0 ? (
-            <div className="amap-suggestions" role="listbox">
-              {routeEndSuggestions.map((tip, index) => (
-                <button
-                  key={`${tip.id || tip.name || "end"}-${index}`}
-                  type="button"
-                  role="option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => onSuggestionSelect("end", tip)}
-                >
-                  <strong>{tip.name}</strong>
-                  <small>{getTipDetail(tip) || "高德地点候选"}</small>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </label>
-        <button type="submit" className="primary-action">
-          <Navigation size={16} aria-hidden="true" />
-          规划路径
-        </button>
-      </form>
 
-      <section className="amap-card full" aria-label="高德实时地图">
-        <div ref={mapContainerRef} className="amap-container" />
-        <div className="amap-toolbar">
-          <p>{mapStatus}</p>
-          <p>{locationStatus}</p>
-          <p>{routePlanStatus}</p>
-          <p>{suggestionStatus}</p>
-        </div>
-      </section>
-      <section className="amap-route-panel" aria-label="路线规划结果">
-        <strong>路线详情</strong>
-        <div ref={routePanelRef} className="amap-route-result">
-          {routeSteps.length > 0 ? (
-            <ol>
-              {routeSteps.map((step, index) => (
-                <li key={`${step.instruction}-${index}`}>
-                  <span>{step.instruction}</span>
-                  <small>{step.distance > 0 ? `${step.distance} 米` : ""}</small>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p>规划成功后，这里会显示高德返回的步行路线步骤。</p>
-          )}
-        </div>
-      </section>
+          <div className="map-layer-control" aria-label="地图图层">
+            <Layers3 size={16} aria-hidden="true" />
+            {displayModes.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                className={mode.id === displayMode ? "active" : ""}
+                onClick={() => onDisplayModeChange(mode.id)}
+                aria-pressed={mode.id === displayMode}
+                disabled={mapState !== "ready"}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          <button type="button" className="map-locate-control" onClick={onLocate} disabled={mapState !== "ready"}>
+            <LocateFixed size={18} aria-hidden="true" />
+            定位并设为起点
+          </button>
+
+          <div className="map-route-status" role="status" aria-live="polite">
+            <div className="map-route-status-icon"><Navigation size={17} aria-hidden="true" /></div>
+            <div>
+              <strong>{routePlanStatus}</strong>
+              <span><Clock3 size={12} aria-hidden="true" /> {locationStatus} · {mapStatus}</span>
+            </div>
+          </div>
+
+          <p className="map-suggestion-status">{suggestionStatus}</p>
+        </section>
+      </div>
     </section>
   );
 }

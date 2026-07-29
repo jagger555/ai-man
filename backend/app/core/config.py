@@ -66,6 +66,16 @@ class NavigationConfig:
     timeout: int
 
 
+@dataclass(frozen=True)
+class ScenicStatusConfig:
+    amap_web_service_key: str
+    scenic_name: str
+    adcode: str
+    weather_timeout: float
+    weather_cache_seconds: int
+    weather_max_stale_seconds: int
+
+
 def get_chat_config() -> ChatConfig:
     return ChatConfig(
         top_k=int(os.getenv("CHAT_TOP_K", "3")),
@@ -140,9 +150,43 @@ def get_navigation_config() -> NavigationConfig:
     )
 
 
+def get_scenic_status_config() -> ScenicStatusConfig:
+    weather_cache_seconds = _nonnegative_int_env(
+        "SCENIC_WEATHER_CACHE_SECONDS",
+        600,
+    )
+    return ScenicStatusConfig(
+        amap_web_service_key=os.getenv("AMAP_WEB_SERVICE_KEY", "").strip(),
+        scenic_name=os.getenv("SCENIC_NAME", "灵山胜境").strip() or "灵山胜境",
+        adcode=os.getenv("SCENIC_ADCODE", "320211").strip() or "320211",
+        weather_timeout=_positive_float_env("SCENIC_WEATHER_TIMEOUT", 2.0),
+        weather_cache_seconds=weather_cache_seconds,
+        weather_max_stale_seconds=max(
+            weather_cache_seconds,
+            _nonnegative_int_env("SCENIC_WEATHER_MAX_STALE_SECONDS", 3600),
+        ),
+    )
+
+
 def _env_or_default(name: str, default: str) -> str:
     value = os.getenv(name)
     if value is None:
         return default
     stripped = value.strip()
     return stripped if stripped else default
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _nonnegative_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= 0 else default

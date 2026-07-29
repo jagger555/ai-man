@@ -8,6 +8,7 @@ from app.api.feedback import admin_router as feedback_admin_router
 from app.api.feedback import router as feedback_router
 from app.api.knowledge import router as knowledge_router
 from app.api.navigation import router as navigation_router
+from app.api.scenic_status import router as scenic_status_router
 from app.api.speech import router as speech_router
 from app.api.visitor_report import router as visitor_report_router
 
@@ -28,6 +29,7 @@ app.include_router(feedback_router)
 app.include_router(feedback_admin_router)
 app.include_router(knowledge_router)
 app.include_router(navigation_router)
+app.include_router(scenic_status_router)
 app.include_router(speech_router)
 app.include_router(visitor_report_router)
 

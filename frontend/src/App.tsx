@@ -45,6 +45,7 @@ import { VisitorReportPanel } from "./VisitorReportPanel";
 import { AvatarManager } from "./AvatarManager";
 import { StreamingAsrClient } from "./streamingAsrClient";
 import { ScenicMapPanel } from "./ScenicMapPanel";
+import { ScenicStatusHeader } from "./ScenicStatusHeader";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -56,17 +57,6 @@ const sampleQuestions = [
 ];
 
 const positiveEmojis = ["😊", "😄", "👍", "❤️", "🙏", "🤩", "👏", "🌸"];
-
-const scenicTags = [
-  "国家 AAAAA 级景区",
-  "佛教文化胜境",
-  "太湖山水",
-];
-
-type HeroHeaderProps = {
-  activeView: ActiveView;
-  onViewChange: (view: ActiveView) => void;
-};
 
 type AdminSection = "overview" | "insights" | "qa" | "knowledge" | "avatar";
 type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "service_guide";
@@ -196,65 +186,6 @@ const adminSections: Array<{
     icon: Bot,
   },
 ];
-
-function StatusBadge({ children }: { children: string }) {
-  return <span className="status-badge">{children}</span>;
-}
-
-function SoftCloudPattern() {
-  return (
-    <div className="soft-cloud-pattern" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-    </div>
-  );
-}
-
-function ScenicHeader({
-  activeView,
-  onViewChange,
-}: HeroHeaderProps) {
-  return (
-    <header className="hero-header" aria-label="灵山胜境 AI 数字导游">
-      <SoftCloudPattern />
-      <div className="brand-mark" aria-hidden="true">
-        <span />
-      </div>
-      <div className="hero-copy">
-        <p className="eyebrow">灵山胜境 AI 数字人导游系统</p>
-        <h1>让数字人替游客讲清每一处灵山</h1>
-        <p>面向景区游客、游客中心导览屏和平板设备的数字人讲解界面。</p>
-        <div className="tag-row" aria-label="景区标签">
-          {scenicTags.map((tag) => (
-            <span key={tag}>{tag}</span>
-          ))}
-        </div>
-      </div>
-      <div className="header-status-row" aria-label="景区状态">
-        <StatusBadge>今日开放中</StatusBadge>
-        <StatusBadge>25℃ 晴</StatusBadge>
-        <StatusBadge>人流适中</StatusBadge>
-      </div>
-      <nav className="admin-entry" aria-label="页面入口">
-        <button
-          type="button"
-          className={activeView === "chat" ? "active" : ""}
-          onClick={() => onViewChange("chat")}
-        >
-          游客导览
-        </button>
-        <button
-          type="button"
-          className={activeView === "admin" ? "active admin-link" : "admin-link"}
-          onClick={() => onViewChange("admin")}
-        >
-          管理后台
-        </button>
-      </nav>
-    </header>
-  );
-}
 
 function QuickQuestionButton({
   question,
@@ -1346,7 +1277,7 @@ export function App() {
   return (
     <main className={activeView === "admin" ? "scenic-guide-page admin-page" : "scenic-guide-page"}>
       {activeView === "chat" ? (
-        <ScenicHeader
+        <ScenicStatusHeader
           activeView={activeView}
           onViewChange={setActiveView}
         />

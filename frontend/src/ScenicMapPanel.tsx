@@ -33,6 +33,7 @@ type AMapNamespace = {
   Geolocation?: new (options: Record<string, unknown>) => AMapGeolocation;
   TileLayer: AMapTileLayerFactory;
   Buildings: new (options?: Record<string, unknown>) => unknown;
+  Marker: new (options: Record<string, unknown>) => AMapOverlay;
   Polyline: new (options: Record<string, unknown>) => AMapOverlay;
   plugin: (plugins: string | string[], callback: () => void) => void;
 };
@@ -49,6 +50,7 @@ type AMapMap = {
   setRotation: (rotation: number) => void;
   setZoom: (zoom: number) => void;
   setMapStyle: (style: string) => void;
+  setCenter: (center: [number, number]) => void;
   destroy: () => void;
   addControl: (control: unknown) => void;
   add: (overlay: AMapOverlay | AMapOverlay[]) => void;
@@ -261,6 +263,17 @@ const QUICK_DESTINATION_IDS = [
   "local-wuyin",
 ];
 const QUICK_DESTINATIONS = QUICK_DESTINATION_IDS.map(
+  (id) => LOCAL_NAVIGATION_SUGGESTIONS.find((tip) => tip.id === id),
+).filter((tip): tip is AMapTip => Boolean(tip?.name));
+const SCENIC_MAP_LANDMARK_IDS = [
+  "local-tourist-center",
+  "local-jiulong",
+  "local-buddha-hand",
+  "local-lingshan-buddha",
+  "local-fangong",
+  "local-wuyin",
+];
+const SCENIC_MAP_LANDMARKS = SCENIC_MAP_LANDMARK_IDS.map(
   (id) => LOCAL_NAVIGATION_SUGGESTIONS.find((tip) => tip.id === id),
 ).filter((tip): tip is AMapTip => Boolean(tip?.name));
 
@@ -574,8 +587,10 @@ export function ScenicMapPanel({
   const routePanelRef = useRef<HTMLDivElement | null>(null);
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const endInputRef = useRef<HTMLInputElement | null>(null);
+  const amapNamespaceRef = useRef<AMapNamespace | null>(null);
   const mapRef = useRef<AMapMap | null>(null);
-  const routePolylineRef = useRef<AMapOverlay | null>(null);
+  const routeOverlaysRef = useRef<AMapOverlay[]>([]);
+  const landmarkMarkersRef = useRef<AMapOverlay[]>([]);
   const routeRequestRef = useRef<AbortController | null>(null);
   const routeRequestSeqRef = useRef(0);
   const locationRequestSeqRef = useRef(0);
@@ -739,6 +754,7 @@ export function ScenicMapPanel({
           viewMode: "3D",
           resizeEnable: true,
         });
+        amapNamespaceRef.current = AMap;
         mapRef.current = map;
 
         setDisplayMode("standard");
@@ -759,23 +775,93 @@ export function ScenicMapPanel({
       routeRequestSeqRef.current += 1;
       routeRequestRef.current?.abort();
       routeRequestRef.current = null;
-      if (routePolylineRef.current && mapRef.current) {
-        mapRef.current.remove(routePolylineRef.current);
+      if (routeOverlaysRef.current.length > 0 && mapRef.current) {
+        mapRef.current.remove(routeOverlaysRef.current);
       }
-      routePolylineRef.current = null;
+      routeOverlaysRef.current = [];
+      landmarkMarkersRef.current = [];
+      amapNamespaceRef.current = null;
       mapRef.current?.destroy();
       mapRef.current = null;
     };
   }, [defaultMode, mapRetryKey]);
 
+  useEffect(() => {
+    const AMap = amapNamespaceRef.current;
+    const map = mapRef.current;
+    if (defaultMode !== "map_guide" || mapState !== "ready" || !AMap?.Marker || !map) {
+      return undefined;
+    }
+
+    if (landmarkMarkersRef.current.length > 0) {
+      map.remove(landmarkMarkersRef.current);
+    }
+
+    const markers = SCENIC_MAP_LANDMARKS.flatMap((tip) => {
+      const coordinate = getTipCoordinate(tip);
+      const name = tip.name?.trim();
+      if (!coordinate || !name) {
+        return [];
+      }
+
+      const markerButton = document.createElement("button");
+      markerButton.type = "button";
+      markerButton.className = [
+        "amap-landmark-pin",
+        selectedEndTip?.id === tip.id ? "is-active" : "",
+        tip.id === "local-wuyin" ? "is-offset-right" : "",
+      ].filter(Boolean).join(" ");
+      const displayName = name.replace(/^灵山胜境-?/, "");
+      markerButton.setAttribute("aria-label", `将${displayName}设为目的地`);
+      markerButton.title = `导航到${displayName}`;
+
+      const markerDot = document.createElement("span");
+      markerDot.setAttribute("aria-hidden", "true");
+      const markerLabel = document.createElement("strong");
+      markerLabel.textContent = displayName;
+      markerButton.append(markerDot, markerLabel);
+      markerButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+      markerButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        invalidateRoute(`已在地图中选择${displayName}，请确认后规划步行路线。`);
+        setRouteEnd(name);
+        setSelectedEndTip(tip);
+        setEndSuggestions([]);
+        setIsPlannerOpen(true);
+        map.setCenter(coordinate);
+        map.setZoom(17);
+      });
+
+      return [
+        new AMap.Marker({
+          position: coordinate,
+          anchor: "bottom-center",
+          content: markerButton,
+          zIndex: selectedEndTip?.id === tip.id ? 130 : 110,
+        }),
+      ];
+    });
+
+    map.add(markers);
+    landmarkMarkersRef.current = markers;
+    return () => {
+      if (mapRef.current === map) {
+        map.remove(markers);
+      }
+      if (landmarkMarkersRef.current === markers) {
+        landmarkMarkersRef.current = [];
+      }
+    };
+  }, [defaultMode, mapRetryKey, mapState, selectedEndTip?.id]);
+
   function clearRenderedRoute() {
     routeRequestSeqRef.current += 1;
     routeRequestRef.current?.abort();
     routeRequestRef.current = null;
-    if (routePolylineRef.current && mapRef.current) {
-      mapRef.current.remove(routePolylineRef.current);
+    if (routeOverlaysRef.current.length > 0 && mapRef.current) {
+      mapRef.current.remove(routeOverlaysRef.current);
     }
-    routePolylineRef.current = null;
+    routeOverlaysRef.current = [];
     setRouteSummary(null);
     setRouteSteps([]);
     setIsPlanning(false);
@@ -1002,9 +1088,31 @@ export function ScenicMapPanel({
         lineCap: "round",
         showDir: true,
       });
-      map.add(polyline);
-      map.setFitView([polyline], false, [56, 56, 56, 56], 17);
-      routePolylineRef.current = polyline;
+      const createEndpointMarker = (
+        kind: "start" | "end",
+        label: string,
+        position: [number, number],
+      ) => {
+        const content = document.createElement("div");
+        content.className = `amap-route-endpoint is-${kind}`;
+        const badge = document.createElement("i");
+        badge.textContent = kind === "start" ? "起" : "终";
+        const text = document.createElement("strong");
+        text.textContent = label.replace(/^灵山胜境-?/, "");
+        content.append(badge, text);
+        return new AMap.Marker({
+          position,
+          anchor: "bottom-center",
+          content,
+          zIndex: 150,
+        });
+      };
+      const startMarker = createEndpointMarker("start", startName, startCoordinate);
+      const endMarker = createEndpointMarker("end", endName, endCoordinate);
+      const routeOverlays = [polyline, startMarker, endMarker];
+      map.add(routeOverlays);
+      map.setFitView(routeOverlays, false, [64, 64, 92, 64], 17);
+      routeOverlaysRef.current = routeOverlays;
       setRouteSteps(route.steps);
       setRouteSummary({
         start: startName,

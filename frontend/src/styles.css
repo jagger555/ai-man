@@ -7021,6 +7021,110 @@ textarea {
   min-height: 100%;
 }
 
+.amap-landmark-pin {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid rgba(27, 91, 73, 0.2);
+  border-radius: 16px 6px 16px 6px;
+  padding: 5px 9px 5px 6px;
+  color: #184f42;
+  background: rgba(255, 253, 247, 0.94);
+  box-shadow: 0 8px 18px rgba(20, 62, 51, 0.2);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  transform: translateY(-3px);
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.amap-landmark-pin:hover,
+.amap-landmark-pin:focus-visible {
+  transform: translateY(-5px);
+  outline: none;
+  border-color: rgba(29, 104, 84, 0.45);
+  box-shadow: 0 12px 24px rgba(20, 62, 51, 0.25);
+}
+
+.amap-landmark-pin span {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  background: #2d806b;
+  box-shadow: 0 0 0 1px rgba(27, 91, 73, 0.14);
+}
+
+.amap-landmark-pin strong {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.amap-landmark-pin.is-active {
+  color: #fffaf0;
+  background: #176854;
+  box-shadow: 0 11px 25px rgba(16, 74, 59, 0.3);
+}
+
+.amap-landmark-pin.is-active span {
+  background: #f0c86c;
+  box-shadow: 0 0 0 2px rgba(240, 200, 108, 0.25);
+}
+
+.amap-landmark-pin.is-offset-right {
+  transform: translate(22px, -3px);
+}
+
+.amap-landmark-pin.is-offset-right:hover,
+.amap-landmark-pin.is-offset-right:focus-visible {
+  transform: translate(22px, -5px);
+}
+
+.amap-route-endpoint {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 34px;
+  border: 2px solid #fff;
+  border-radius: 17px 6px 17px 6px;
+  padding: 5px 10px 5px 5px;
+  color: #fff;
+  background: #236f5d;
+  box-shadow: 0 10px 24px rgba(17, 63, 51, 0.3);
+  white-space: nowrap;
+  transform: translateY(-4px);
+}
+
+.amap-route-endpoint.is-end {
+  color: #473714;
+  background: #f2cb72;
+}
+
+.amap-route-endpoint i {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #1c5d4d;
+  background: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.amap-route-endpoint strong {
+  max-width: 130px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+}
+
 .map-load-panel {
   position: absolute;
   z-index: 12;

@@ -114,8 +114,8 @@ const mockGuideServiceEntries: GuideServiceEntry[] = [
     id: "map_guide",
     title: "地图导航",
     helper: "GPS / 步行路线",
-    summary: "可接入实时定位，展示当前位置、步行路线和附近服务点。",
-    supports: ["实时 GPS 定位", "当前位置", "步行路线", "最近服务点"],
+    summary: "支持高德地点联想、浏览器定位、景区步行路线与地图图层切换。",
+    supports: ["高德地点联想", "GPS 设为起点", "步行路线总览", "标准/卫星/3D 图层"],
     icon: Map,
   },
   {
@@ -405,7 +405,7 @@ function AnswerPreviewCard({
         {isLoading ? "数字导游正在结合景区资料整理适合现场播报的讲解内容。" : previewText}
       </p>
       {hasServicePreview ? (
-        <div className="service-preview-list" aria-label={`${servicePreview?.title}后期支持内容`}>
+        <div className="service-preview-list" aria-label={`${servicePreview?.title}可用功能`}>
           {servicePreview?.supports.map((item) => <span key={item}>{item}</span>)}
         </div>
       ) : null}
@@ -439,7 +439,7 @@ function AnswerPreviewCard({
         ) : (
           <span>
             {hasServicePreview
-              ? "服务入口将根据景区配置展示路线、定位、场次和服务点。"
+              ? `${servicePreview?.title}已打开，可直接使用上方功能。`
               : "回答生成后，数字人会自动开始播报。"}
           </span>
         )}

@@ -10,6 +10,7 @@ import {
   Mic,
   RefreshCw,
   Route,
+  ScanLine,
   Smile,
   Users,
 } from "lucide-react";
@@ -46,6 +47,7 @@ import { AvatarManager } from "./AvatarManager";
 import { StreamingAsrClient } from "./streamingAsrClient";
 import { ScenicMapPanel } from "./ScenicMapPanel";
 import { ScenicStatusHeader } from "./ScenicStatusHeader";
+import { PanoramaExperience } from "./PanoramaExperience";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -59,7 +61,7 @@ const sampleQuestions = [
 const positiveEmojis = ["😊", "😄", "👍", "❤️", "🙏", "🤩", "👏", "🌸"];
 
 type AdminSection = "overview" | "insights" | "qa" | "knowledge" | "avatar";
-type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "service_guide";
+type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "vr_guide" | "service_guide";
 type PendingDashboardAction =
   | "low-confidence"
   | "high-frequency"
@@ -101,7 +103,7 @@ const performanceScheduleNotice = {
   ],
 };
 
-const mockGuideServiceEntries: GuideServiceEntry[] = [
+const guideServiceEntries: GuideServiceEntry[] = [
   {
     id: "route_guide",
     title: "游览路线",
@@ -117,6 +119,14 @@ const mockGuideServiceEntries: GuideServiceEntry[] = [
     summary: "支持高德地点联想、浏览器定位、景区步行路线与地图图层切换。",
     supports: ["高德地点联想", "GPS 设为起点", "步行路线总览", "标准/卫星/3D 图层"],
     icon: Map,
+  },
+  {
+    id: "vr_guide",
+    title: "VR 实景",
+    helper: "360° / 数字人讲解",
+    summary: "可在 Web 端直接进入灵山胜境 360° 全景，并按代表性看点联动数字人讲解。",
+    supports: ["360° 实景漫游", "全景内热点", "五个导览看点", "数字人同步讲解"],
+    icon: ScanLine,
   },
   {
     id: "performance_time",
@@ -503,10 +513,12 @@ function PerformanceSchedulePanel() {
 function GuideServiceBar({
   entries,
   isLoading,
+  activeIntent,
   onSelect,
 }: {
   entries: GuideServiceEntry[];
   isLoading: boolean;
+  activeIntent?: GuideIntent;
   onSelect: (intent: GuideIntent) => void;
 }) {
   return (
@@ -517,9 +529,10 @@ function GuideServiceBar({
           <button
             key={item.title}
             type="button"
-            className="recommend-entry"
+            className={`recommend-entry ${activeIntent === item.id ? "active" : ""}`}
             onClick={() => onSelect(item.id)}
             disabled={isLoading}
+            aria-pressed={activeIntent === item.id}
             aria-label={`${item.title}：${item.helper}`}
           >
             <ItemIcon size={22} aria-hidden="true" />
@@ -941,7 +954,7 @@ export function App() {
   }
 
   function openGuideService(intent: GuideIntent) {
-    const matchedEntry = mockGuideServiceEntries.find((entry) => entry.id === intent) ?? null;
+    const matchedEntry = guideServiceEntries.find((entry) => entry.id === intent) ?? null;
     setActiveGuideService(matchedEntry);
     setResponse(null);
     setServiceNarration(null);
@@ -1337,6 +1350,9 @@ export function App() {
               ) : null}
               {activeGuideService?.id === "performance_time" ? (
                 <PerformanceSchedulePanel />
+              ) : null}
+              {activeGuideService?.id === "vr_guide" ? (
+                <PanoramaExperience onNarrationChange={setServiceNarration} />
               ) : null}
               <AnswerPreviewCard
                 response={response}
@@ -1833,8 +1849,9 @@ export function App() {
         </section>
         {activeView === "chat" ? (
           <GuideServiceBar
-            entries={mockGuideServiceEntries}
+            entries={guideServiceEntries}
             isLoading={isLoading}
+            activeIntent={activeGuideService?.id}
             onSelect={openGuideService}
           />
         ) : null}

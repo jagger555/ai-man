@@ -6,6 +6,20 @@ from app.main import app
 def test_operations_suggestions_use_aggregated_evidence_and_links(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "operations.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setattr(
+        "app.services.operations_suggestion_service.VisitorAnalyticsService.get_summary",
+        lambda _self: {
+            "source_file": "tourism-reference.xlsx",
+            "total_visits": 1000,
+            "average_group_size": 2.8,
+            "average_total_cost": 680,
+            "age_groups": [
+                {"label": "18-29岁", "count": 320, "share": 0.32},
+                {"label": "30-44岁", "count": 430, "share": 0.43},
+                {"label": "60岁以上", "count": 80, "share": 0.08},
+            ],
+        },
+    )
     client = TestClient(app)
     for event_type, page, metadata in [
         ("page_view", "home", {}),
@@ -28,12 +42,23 @@ def test_operations_suggestions_use_aggregated_evidence_and_links(monkeypatch, t
     assert body["engine"] == "rule_mining"
     assert body["suggestions"]
     assert all(item["evidence"] and item["action"] and item["module"] for item in body["suggestions"])
+    assert all(item["domain"] and item["source_label"] for item in body["suggestions"])
     assert any(item["id"] == "navigation-recovery" for item in body["suggestions"])
+    assert any(item["id"] == "audience-retail-mix" for item in body["suggestions"])
+    assert any(item["id"] == "performance-capacity-window" for item in body["suggestions"])
 
 
 def test_operations_suggestions_do_not_invent_when_no_events(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "empty.db"))
     monkeypatch.setenv("LLM_PROVIDER", "mock")
+    monkeypatch.setattr(
+        "app.services.operations_suggestion_service.VisitorAnalyticsService.get_summary",
+        lambda _self: {},
+    )
+    monkeypatch.setattr(
+        "app.services.operations_suggestion_service.get_crowd_history",
+        lambda: {"points": []},
+    )
     response = TestClient(app).get("/api/admin/operations-suggestions")
     assert response.status_code == 200
     assert response.json()["suggestions"] == []

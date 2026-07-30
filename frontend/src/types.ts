@@ -310,6 +310,8 @@ export type OperationSuggestion = {
   title: string;
   evidence: string[];
   action: string;
+  domain?: string;
+  source_label?: string;
   module: "overview" | "insights" | "crowd" | "content" | "quality" | "knowledge" | "avatar";
 };
 

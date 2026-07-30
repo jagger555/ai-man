@@ -18,6 +18,9 @@ class ChatRequest(BaseModel):
     visitor_type: str = Field(default="未提供", max_length=100)
     available_time: str = Field(default="未提供", max_length=100)
     route_context: str = Field(default="未提供", max_length=2000)
+    page_context: str = Field(default="未提供", max_length=100)
+    entity_context: str = Field(default="未提供", max_length=300)
+    preference_context: str = Field(default="未提供", max_length=500)
 
 
 @router.post("/chat")
@@ -30,6 +33,9 @@ def chat(request: ChatRequest):
         visitor_type=request.visitor_type,
         available_time=request.available_time,
         route_context=request.route_context,
+        page_context=request.page_context,
+        entity_context=request.entity_context,
+        preference_context=request.preference_context,
     )
     return JSONResponse(
         {

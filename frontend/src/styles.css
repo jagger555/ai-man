@@ -11265,7 +11265,12 @@ textarea {
   padding: 0 7px 7px 0;
   color: #fff;
   background: linear-gradient(135deg, transparent 44%, rgba(24, 78, 64, 0.88));
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+}
+
+.pip-mode.is-collapsed.is-dragging .pip-expand-button {
+  cursor: grabbing;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -136,6 +136,7 @@ export function DigitalHumanPanel({
   const loadingPromptSentRef = useRef(false);
   const pipDragRef = useRef<PipDragState | null>(null);
   const pipAnchorRef = useRef<PipAnchor | null>(null);
+  const suppressPipExpandClickRef = useRef(false);
   const lastPipQuestionOpenRequestRef = useRef(pipQuestionOpenRequest);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
@@ -613,11 +614,16 @@ export function DigitalHumanPanel({
   }
 
   function beginPipDrag(event: ReactPointerEvent<HTMLElement>) {
-    if (mode !== "pip" || isPipCollapsed || event.button !== 0) {
+    if (mode !== "pip" || event.button !== 0) {
       return;
     }
     const target = event.target as HTMLElement;
-    if (target.closest("button:not(.pip-caption), input, form")) {
+    const collapsedDragHandle = target.closest(".pip-expand-button");
+    if (
+      target.closest("input, form") ||
+      (!isPipCollapsed && target.closest("button:not(.pip-caption)")) ||
+      (isPipCollapsed && !collapsedDragHandle)
+    ) {
       return;
     }
     const panel = panelRef.current;
@@ -633,6 +639,7 @@ export function DigitalHumanPanel({
       originTop: rect.top,
       hasMoved: false,
     };
+    suppressPipExpandClickRef.current = false;
     event.preventDefault();
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -679,7 +686,8 @@ export function DigitalHumanPanel({
   }
 
   function finishPipDrag(pointerId: number) {
-    if (pipDragRef.current?.pointerId !== pointerId) {
+    const drag = pipDragRef.current;
+    if (drag?.pointerId !== pointerId) {
       return;
     }
     const panel = panelRef.current;
@@ -696,6 +704,9 @@ export function DigitalHumanPanel({
         setPipAnchor(nextAnchor);
         setPipPosition(getPipPositionFromAnchor(nextAnchor, rect.width, rect.height));
       }
+    }
+    if (isPipCollapsed && drag.hasMoved) {
+      suppressPipExpandClickRef.current = true;
     }
     pipDragRef.current = null;
     setIsPipDragging(false);
@@ -947,7 +958,13 @@ export function DigitalHumanPanel({
           className="pip-expand-button"
           aria-label="展开数字人画中画"
           title="展开数字人"
-          onClick={() => setIsPipCollapsed(false)}
+          onClick={() => {
+            if (suppressPipExpandClickRef.current) {
+              suppressPipExpandClickRef.current = false;
+              return;
+            }
+            setIsPipCollapsed(false);
+          }}
         >
           <Maximize2 size={18} aria-hidden="true" />
         </button>

@@ -367,15 +367,12 @@ function GuideQuestionPanel({
         <div>
           <p className="eyebrow">游客提问</p>
           <h2>想问数字导游什么？</h2>
-          <span>可以询问路线、演出、文化典故和附近服务</span>
         </div>
       </div>
-      <label className="sr-only" htmlFor="question">
-        输入你想了解的灵山胜境问题
-      </label>
       <textarea
         ref={textareaRef}
         id="question"
+        aria-label="向灵山数字导游提问"
         value={question}
         onChange={(event) => onQuestionChange(event.target.value)}
         rows={4}
@@ -1658,24 +1655,23 @@ export function App() {
               </>
             ) : (
               <section className="visitor-feature-page" aria-label={selectedVisitorPage?.title}>
-                <button
-                  type="button"
-                  className="visitor-home-button visitor-home-floating"
-                  onClick={() => navigateToVisitorPage("home")}
-                >
-                  <ArrowLeft size={17} aria-hidden="true" />
-                  返回首页
-                </button>
-                <div className="visitor-history-controls" aria-label="页面浏览控制">
-                  <button type="button" onClick={() => window.history.back()} title="上一步" aria-label="上一步">
+                <div className="visitor-page-toolbar" aria-label="页面浏览控制">
+                  <button
+                    type="button"
+                    className="visitor-home-button visitor-home-floating"
+                    onClick={() => navigateToVisitorPage("home")}
+                  >
                     <ArrowLeft size={17} aria-hidden="true" />
+                    返回首页
                   </button>
-                  <button type="button" onClick={() => window.history.forward()} title="下一步" aria-label="下一步">
-                    <ArrowRight size={17} aria-hidden="true" />
-                  </button>
-                  <button type="button" onClick={() => navigateToVisitorPage("home")} title="首页" aria-label="返回首页">
-                    首页
-                  </button>
+                  <div className="visitor-history-controls">
+                    <button type="button" onClick={() => window.history.back()} title="上一步" aria-label="上一步">
+                      <ArrowLeft size={17} aria-hidden="true" />
+                    </button>
+                    <button type="button" onClick={() => window.history.forward()} title="下一步" aria-label="下一步">
+                      <ArrowRight size={17} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
                 {visitorPage === "route" ? (
                   <div className="visitor-feature-content route-feature-content">

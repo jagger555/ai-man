@@ -1,92 +1,87 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   Accessibility,
   Baby,
   CircleParking,
   Cross,
+  Droplets,
   Headset,
+  Home,
+  Info,
+  Landmark,
   LocateFixed,
-  Luggage,
+  MapPin,
   MessageCircleQuestion,
-  Soup,
+  ShoppingBag,
   Toilet,
+  TramFront,
+  TreePine,
+  Utensils,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-type VisitorService = {
+type FacilityCategory = {
   id: string;
   title: string;
-  searchTerm: string;
-  description: string;
-  accent: string;
-  icon: LucideIcon;
+  is_common: boolean;
+  enabled: boolean;
 };
 
-const visitorServices: VisitorService[] = [
-  {
-    id: "toilet",
-    title: "卫生间",
-    searchTerm: "卫生间",
-    description: "在景区地图中检索附近公共卫生间。",
-    accent: "jade",
-    icon: Toilet,
-  },
-  {
-    id: "dining",
-    title: "餐饮",
-    searchTerm: "餐饮",
-    description: "查找餐饮服务点，菜单与营业情况以现场为准。",
-    accent: "amber",
-    icon: Soup,
-  },
-  {
-    id: "parking",
-    title: "停车",
-    searchTerm: "停车场",
-    description: "检索景区周边停车场，余位请以现场信息为准。",
-    accent: "blue",
-    icon: CircleParking,
-  },
-  {
-    id: "visitor-center",
-    title: "游客中心",
-    searchTerm: "游客中心",
-    description: "查找综合咨询、游园协助等服务入口。",
-    accent: "teal",
-    icon: Headset,
-  },
-  {
-    id: "medical",
-    title: "医疗服务",
-    searchTerm: "医疗服务点",
-    description: "需要紧急帮助时优先联系现场工作人员。",
-    accent: "red",
-    icon: Cross,
-  },
-  {
-    id: "accessible",
-    title: "无障碍服务",
-    searchTerm: "无障碍服务",
-    description: "咨询无障碍通行与辅助设施使用方式。",
-    accent: "violet",
-    icon: Accessibility,
-  },
-  {
-    id: "baby-care",
-    title: "母婴服务",
-    searchTerm: "母婴室",
-    description: "检索母婴服务设施，具体使用情况现场确认。",
-    accent: "rose",
-    icon: Baby,
-  },
-  {
-    id: "storage",
-    title: "行李寄存",
-    searchTerm: "行李寄存",
-    description: "查找寄存服务，收费与可用情况以现场为准。",
-    accent: "gold",
-    icon: Luggage,
-  },
-];
+type Facility = {
+  id: string;
+  title: string;
+  category_id: string;
+  lat: number;
+  lng: number;
+  enabled: boolean;
+};
+
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  卫生间: Toilet,
+  景点: Landmark,
+  出入口: MapPin,
+  饮用水: Droplets,
+  母婴室: Baby,
+  游客服务: Headset,
+  售票处: Info,
+  自助设施: CircleParking,
+  讲解: Headset,
+  餐饮: Utensils,
+  商店: ShoppingBag,
+  住宿: Home,
+  观光车站: TramFront,
+  医务室: Cross,
+  休息区: TreePine,
+  吸烟处: Accessibility,
+  植物: TreePine,
+};
+
+const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  卫生间: "查看景区内卫生间点位，并在地图中选择导航终点。",
+  饮用水: "查找饮水补给点，按地图点位规划步行路线。",
+  休息区: "查看可供短暂停留的休息区分布。",
+  母婴室: "查看母婴室点位，方便亲子出行时提前规划。",
+  医务室: "需要帮助时可定位医务服务点；紧急情况请优先联系现场人员。",
+  游客服务: "查看咨询、游园协助等服务点分布。",
+  餐饮: "查看餐饮服务点分布，具体经营以现场为准。",
+  商店: "查看景区商店点位，商品与营业信息以现场为准。",
+  观光车站: "查看观光车站点位置，具体运营安排以现场为准。",
+};
+
+function distanceInMeters(lat: number, lng: number) {
+  const center = { lat: 31.4253, lng: 120.0914 };
+  const radius = 6371000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const latDelta = toRadians(lat - center.lat);
+  const lngDelta = toRadians(lng - center.lng);
+  const arc = Math.sin(latDelta / 2) ** 2
+    + Math.cos(toRadians(center.lat)) * Math.cos(toRadians(lat)) * Math.sin(lngDelta / 2) ** 2;
+  return Math.round(radius * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc)));
+}
+
+function formatDistance(distance: number) {
+  return distance < 1000 ? `${distance} 米` : `${(distance / 1000).toFixed(1)} 公里`;
+}
 
 export function VisitorServicesPage({
   onFindNearest,
@@ -95,40 +90,71 @@ export function VisitorServicesPage({
   onFindNearest: (searchTerm: string) => void;
   onConsult: (title: string) => void;
 }) {
+  const [categories, setCategories] = useState<FacilityCategory[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/scenic/content", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("facility content unavailable"))))
+      .then((payload: { items?: { facility_category?: FacilityCategory[]; facility?: Facility[] } }) => {
+        setCategories((payload.items?.facility_category ?? []).filter((item) => item.enabled));
+        setFacilities((payload.items?.facility ?? []).filter((item) => item.enabled));
+        setLoadState("ready");
+      })
+      .catch((error: unknown) => {
+        if ((error as { name?: string })?.name !== "AbortError") setLoadState("error");
+      });
+    return () => controller.abort();
+  }, []);
+
+  const cards = useMemo(() => categories.map((category) => {
+    const locations = facilities
+      .filter((facility) => facility.category_id === category.id)
+      .map((facility) => ({ ...facility, distance: distanceInMeters(facility.lat, facility.lng) }))
+      .sort((left, right) => left.distance - right.distance);
+    return { category, locations, closest: locations[0] ?? null };
+  }), [categories, facilities]);
+
   return (
     <section className="visitor-services-page" aria-label="灵山胜境游客服务">
       <header className="visitor-services-head">
         <div>
           <p className="eyebrow">VISITOR SERVICES · LINGSHAN</p>
-          <h1>游园服务，一页快速查找</h1>
+          <h1>景区导览与服务，一图查找</h1>
         </div>
-        <p>选择所需服务，可直接带入景区地图或向数字导游咨询。具体位置与开放情况以现场标识为准。</p>
+        <p>服务点位与地图同步。选择类别后可查看分布、距离，并将任一点设为步行导航终点。</p>
       </header>
 
-      <div className="visitor-service-grid">
-        {visitorServices.map((service) => {
-          const Icon = service.icon;
-          return (
-            <article key={service.id} className={`visitor-service-card is-${service.accent}`}>
-              <div className="visitor-service-icon" aria-hidden="true">
-                <Icon size={27} strokeWidth={1.8} />
-              </div>
-              <div className="visitor-service-copy">
-                <h2>{service.title}</h2>
-                <p>{service.description}</p>
-              </div>
-              <div className="visitor-service-actions">
-                <button type="button" onClick={() => onFindNearest(service.searchTerm)}>
-                  <LocateFixed size={15} aria-hidden="true" /> 查找最近
-                </button>
-                <button type="button" onClick={() => onConsult(service.title)}>
-                  <MessageCircleQuestion size={15} aria-hidden="true" /> 咨询数字人
-                </button>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+      {loadState === "loading" ? <div className="visitor-services-loading">正在载入景区服务点位…</div> : null}
+      {loadState === "error" ? <div className="visitor-services-loading is-error">服务点位暂时无法加载，请稍后重试。</div> : null}
+
+      {loadState === "ready" ? (
+        <div className="visitor-service-grid facility-service-grid">
+          {cards.map(({ category, locations, closest }) => {
+            const Icon = CATEGORY_ICONS[category.title] ?? MapPin;
+            return (
+              <article key={category.id} className={`visitor-service-card ${category.is_common ? "is-common" : ""}`}>
+                <div className="visitor-service-icon" aria-hidden="true"><Icon size={25} strokeWidth={1.8} /></div>
+                <div className="visitor-service-copy">
+                  <div className="visitor-service-title-row"><h2>{category.title}</h2><span>{locations.length} 处</span></div>
+                  <p>{CATEGORY_DESCRIPTIONS[category.title] ?? "查看景区内实际服务点位及其分布。"}</p>
+                  {closest ? <small><MapPin size={13} aria-hidden="true" /> 距景区中心约 {formatDistance(closest.distance)} · {closest.title}</small> : null}
+                </div>
+                <div className="visitor-service-actions">
+                  <button type="button" onClick={() => onFindNearest(category.title)} disabled={locations.length === 0}>
+                    <LocateFixed size={15} aria-hidden="true" /> 地图查看
+                  </button>
+                  <button type="button" onClick={() => onConsult(category.title)}>
+                    <MessageCircleQuestion size={15} aria-hidden="true" /> 咨询数字人
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
     </section>
   );
 }

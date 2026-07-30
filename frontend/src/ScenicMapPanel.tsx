@@ -120,6 +120,22 @@ type ScenicRoute = {
   path: [number, number][];
 };
 
+type FacilityCategory = {
+  id: string;
+  title: string;
+  isCommon: boolean;
+  enabled: boolean;
+};
+
+type ScenicFacility = {
+  id: string;
+  title: string;
+  categoryId: string;
+  lat: number;
+  lng: number;
+  enabled: boolean;
+};
+
 type WalkingRouteStep = {
   instruction: string;
   distance: number;
@@ -616,6 +632,9 @@ export function ScenicMapPanel({
   const [suggestionStatus, setSuggestionStatus] = useState("输入两个字以上可查看高德地点联想。");
   const [publishedPois, setPublishedPois] = useState<Array<{ id: string; title: string; enabled: boolean }> | null>(null);
   const [publishedRoutes, setPublishedRoutes] = useState<ScenicRoute[] | null>(null);
+  const [facilityCategories, setFacilityCategories] = useState<FacilityCategory[]>([]);
+  const [facilities, setFacilities] = useState<ScenicFacility[]>([]);
+  const [selectedFacilityCategoryId, setSelectedFacilityCategoryId] = useState("");
   const [routePreferences, setRoutePreferences] = useState<RoutePreferences>({
     companion: "",
     time: "",
@@ -631,6 +650,7 @@ export function ScenicMapPanel({
   const mapRef = useRef<AMapMap | null>(null);
   const routeOverlaysRef = useRef<AMapOverlay[]>([]);
   const landmarkMarkersRef = useRef<AMapOverlay[]>([]);
+  const facilityMarkersRef = useRef<AMapOverlay[]>([]);
   const routeRequestRef = useRef<AbortController | null>(null);
   const routeRequestSeqRef = useRef(0);
   const locationRequestSeqRef = useRef(0);
@@ -704,6 +724,8 @@ export function ScenicMapPanel({
             enabled: boolean;
             order?: number;
           }>;
+          facility_category?: Array<{ id: string; title: string; is_common?: boolean; enabled: boolean }>;
+          facility?: Array<{ id: string; title: string; category_id: string; lat: number; lng: number; enabled: boolean }>;
         };
       }) => {
         if (payload.items?.poi) setPublishedPois(payload.items.poi);
@@ -731,6 +753,32 @@ export function ScenicMapPanel({
               })),
           );
         }
+        if (payload.items?.facility_category) {
+          setFacilityCategories(
+            payload.items.facility_category
+              .filter((category) => category.enabled)
+              .map((category) => ({
+                id: category.id,
+                title: category.title,
+                isCommon: Boolean(category.is_common),
+                enabled: category.enabled,
+              })),
+          );
+        }
+        if (payload.items?.facility) {
+          setFacilities(
+            payload.items.facility
+              .filter((facility) => facility.enabled)
+              .map((facility) => ({
+                id: facility.id,
+                title: facility.title,
+                categoryId: facility.category_id,
+                lat: facility.lat,
+                lng: facility.lng,
+                enabled: facility.enabled,
+              })),
+          );
+        }
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -738,6 +786,15 @@ export function ScenicMapPanel({
   useEffect(() => {
     setActiveRouteId(defaultMode === "map_guide" ? "halfday" : "blessing-zen");
   }, [defaultMode]);
+
+  useEffect(() => {
+    if (defaultMode !== "map_guide" || !initialDestination.trim() || facilityCategories.length === 0) return;
+    const destination = initialDestination.trim();
+    const category = facilityCategories.find((item) =>
+      destination.includes(item.title) || item.title.includes(destination),
+    );
+    if (category) setSelectedFacilityCategoryId(category.id);
+  }, [defaultMode, facilityCategories, initialDestination]);
 
   useEffect(() => {
     const destination = initialDestination.trim();
@@ -938,6 +995,7 @@ export function ScenicMapPanel({
       }
       routeOverlaysRef.current = [];
       landmarkMarkersRef.current = [];
+      facilityMarkersRef.current = [];
       amapNamespaceRef.current = null;
       mapRef.current?.destroy();
       mapRef.current = null;
@@ -1012,6 +1070,74 @@ export function ScenicMapPanel({
       }
     };
   }, [defaultMode, mapRetryKey, mapState, selectedEndTip?.id, visibleLandmarks]);
+
+  const selectedFacilityCategory = facilityCategories.find((item) => item.id === selectedFacilityCategoryId) ?? null;
+  const selectedFacilities = useMemo(
+    () => selectedFacilityCategoryId
+      ? facilities.filter((facility) => facility.categoryId === selectedFacilityCategoryId)
+      : [],
+    [facilities, selectedFacilityCategoryId],
+  );
+
+  useEffect(() => {
+    const AMap = amapNamespaceRef.current;
+    const map = mapRef.current;
+    if (defaultMode !== "map_guide" || mapState !== "ready" || !AMap?.Marker || !map) {
+      return undefined;
+    }
+    if (facilityMarkersRef.current.length > 0) {
+      map.remove(facilityMarkersRef.current);
+    }
+    if (!selectedFacilityCategory) return undefined;
+
+    const markers = selectedFacilities.flatMap((facility, index) => {
+      const markerButton = document.createElement("button");
+      markerButton.type = "button";
+      markerButton.className = "amap-facility-pin";
+      markerButton.setAttribute("aria-label", `选择${facility.title}作为导航终点`);
+      markerButton.title = facility.title;
+      const markerIndex = document.createElement("span");
+      markerIndex.textContent = String(index + 1);
+      const markerLabel = document.createElement("b");
+      markerLabel.textContent = selectedFacilityCategory.title;
+      markerButton.append(markerIndex, markerLabel);
+      markerButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+      markerButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const tip: AMapTip = {
+          id: facility.id,
+          name: facility.title,
+          location: [facility.lng, facility.lat],
+          address: selectedFacilityCategory.title,
+        };
+        invalidateRoute(`已选择${facility.title}，请确认后规划步行路线。`);
+        setRouteEnd(facility.title);
+        setSelectedEndTip(tip);
+        setEndSuggestions([]);
+        setIsPlannerOpen(true);
+        map.setCenter([facility.lng, facility.lat]);
+        map.setZoom(17);
+        onVisitorEvent?.("map_search", {
+          destination: facility.title,
+          source: "facility_marker",
+          category: selectedFacilityCategory.title,
+        });
+      });
+      return [new AMap.Marker({
+        position: [facility.lng, facility.lat],
+        anchor: "bottom-center",
+        content: markerButton,
+        zIndex: 115,
+      })];
+    });
+    map.add(markers);
+    facilityMarkersRef.current = markers;
+    if (markers.length > 0) map.setFitView(markers, false, [86, 36, 40, 370], 17);
+    return () => {
+      if (mapRef.current === map) map.remove(markers);
+      if (facilityMarkersRef.current === markers) facilityMarkersRef.current = [];
+    };
+  }, [defaultMode, mapState, onVisitorEvent, selectedFacilityCategory, selectedFacilities]);
 
   useEffect(() => {
     const AMap = amapNamespaceRef.current;
@@ -1531,6 +1657,9 @@ export function ScenicMapPanel({
       routeSteps={routeSteps}
       routeSummary={routeSummary}
       quickDestinations={visibleQuickDestinations}
+      facilityCategories={facilityCategories}
+      selectedFacilityCategory={selectedFacilityCategory}
+      selectedFacilityCount={selectedFacilities.length}
       routeStart={routeStart}
       routeStartSuggestions={startSuggestions}
       endInputRef={endInputRef}
@@ -1542,6 +1671,7 @@ export function ScenicMapPanel({
       canPlan={canPlanRoute}
       amapNavigationUrl={amapNavigationUrl}
       onDisplayModeChange={applyDisplayMode}
+      onFacilityCategoryChange={setSelectedFacilityCategoryId}
       onLocate={locateWithAmap}
       onPlannerOpenChange={setIsPlannerOpen}
       onQuickDestination={selectQuickDestination}
@@ -1780,6 +1910,7 @@ function AmapNavigationView({
   amapNavigationUrl,
   canPlan,
   displayMode,
+  facilityCategories,
   endInputRef,
   immersive,
   isPlanning,
@@ -1790,6 +1921,7 @@ function AmapNavigationView({
   mapStatus,
   panelRef,
   onDisplayModeChange,
+  onFacilityCategoryChange,
   onLocate,
   onPlannerOpenChange,
   onQuickDestination,
@@ -1811,6 +1943,8 @@ function AmapNavigationView({
   routeSteps,
   routeSummary,
   quickDestinations,
+  selectedFacilityCategory,
+  selectedFacilityCount,
   startInputRef,
   suggestionStatus,
 }: {
@@ -1819,6 +1953,7 @@ function AmapNavigationView({
   amapNavigationUrl: string;
   canPlan: boolean;
   displayMode: AmapDisplayMode;
+  facilityCategories: FacilityCategory[];
   endInputRef: RefObject<HTMLInputElement | null>;
   immersive: boolean;
   isPlanning: boolean;
@@ -1829,6 +1964,7 @@ function AmapNavigationView({
   mapStatus: string;
   panelRef: RefObject<HTMLElement | null>;
   onDisplayModeChange: (mode: AmapDisplayMode) => void;
+  onFacilityCategoryChange: (categoryId: string) => void;
   onLocate: () => void;
   onPlannerOpenChange: (isOpen: boolean) => void;
   onQuickDestination: (tip: AMapTip) => void;
@@ -1850,6 +1986,8 @@ function AmapNavigationView({
   routeSteps: WalkingRouteStep[];
   routeSummary: WalkingRouteSummary | null;
   quickDestinations: AMapTip[];
+  selectedFacilityCategory: FacilityCategory | null;
+  selectedFacilityCount: number;
   startInputRef: RefObject<HTMLInputElement | null>;
   suggestionStatus: string;
 }) {
@@ -2156,6 +2294,32 @@ function AmapNavigationView({
             <LocateFixed size={18} aria-hidden="true" />
             定位并设为起点
           </button>
+
+          <section className="facility-map-control" aria-label="景区设施筛选">
+            <div>
+              <strong>景区设施</strong>
+              <span>{selectedFacilityCategory ? `${selectedFacilityCount} 个${selectedFacilityCategory.title}` : "选择类别查看点位"}</span>
+            </div>
+            <button
+              type="button"
+              className={!selectedFacilityCategory ? "active" : ""}
+              onClick={() => onFacilityCategoryChange("")}
+              aria-pressed={!selectedFacilityCategory}
+            >
+              全部隐藏
+            </button>
+            {facilityCategories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                className={selectedFacilityCategory?.id === category.id ? "active" : ""}
+                onClick={() => onFacilityCategoryChange(category.id)}
+                aria-pressed={selectedFacilityCategory?.id === category.id}
+              >
+                {category.title}
+              </button>
+            ))}
+          </section>
 
           <div className="map-route-status" role="status" aria-live="polite">
             <div className="map-route-status-icon"><Navigation size={17} aria-hidden="true" /></div>

@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowLeft,
+  ArrowRight,
   BarChart3,
   Bot,
   CalendarClock,
@@ -633,7 +634,6 @@ function GuideServiceBar({
             <ItemIcon size={22} aria-hidden="true" />
             <div>
               <strong>{item.title}</strong>
-              <p>{item.helper}</p>
             </div>
           </button>
         );
@@ -1636,23 +1636,25 @@ export function App() {
                   <p className="error-message">{feedbackError}</p>
                 ) : null}
 
-                <AnswerPreviewCard
-                  response={response}
-                  servicePreview={activeGuideService}
-                  isLoading={isLoading}
-                  feedbackStatus={feedbackStatus}
-                  feedbackText={feedbackText}
-                  isFeedbackNoteOpen={isFeedbackNoteOpen}
-                  isSubmittingFeedback={isSubmittingFeedback}
-                  onFeedback={(rating) => void submitFeedback(rating)}
-                  onFeedbackTextChange={setFeedbackText}
-                  onToggleFeedbackNote={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
-                  onSubmitFeedbackNote={() => {
-                    if (feedbackStatus) {
-                      void submitFeedback(feedbackStatus.rating);
-                    }
-                  }}
-                />
+                {response || isLoading ? (
+                  <AnswerPreviewCard
+                    response={response}
+                    servicePreview={activeGuideService}
+                    isLoading={isLoading}
+                    feedbackStatus={feedbackStatus}
+                    feedbackText={feedbackText}
+                    isFeedbackNoteOpen={isFeedbackNoteOpen}
+                    isSubmittingFeedback={isSubmittingFeedback}
+                    onFeedback={(rating) => void submitFeedback(rating)}
+                    onFeedbackTextChange={setFeedbackText}
+                    onToggleFeedbackNote={() => setIsFeedbackNoteOpen((isOpen) => !isOpen)}
+                    onSubmitFeedbackNote={() => {
+                      if (feedbackStatus) {
+                        void submitFeedback(feedbackStatus.rating);
+                      }
+                    }}
+                  />
+                ) : null}
               </>
             ) : (
               <section className="visitor-feature-page" aria-label={selectedVisitorPage?.title}>
@@ -1664,6 +1666,17 @@ export function App() {
                   <ArrowLeft size={17} aria-hidden="true" />
                   返回首页
                 </button>
+                <div className="visitor-history-controls" aria-label="页面浏览控制">
+                  <button type="button" onClick={() => window.history.back()} title="上一步" aria-label="上一步">
+                    <ArrowLeft size={17} aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={() => window.history.forward()} title="下一步" aria-label="下一步">
+                    <ArrowRight size={17} aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={() => navigateToVisitorPage("home")} title="首页" aria-label="返回首页">
+                    首页
+                  </button>
+                </div>
                 {visitorPage === "route" ? (
                   <div className="visitor-feature-content route-feature-content">
                     <ScenicMapPanel

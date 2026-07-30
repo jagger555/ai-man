@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { CalendarClock, Clock3, MapPin, MessageCircleQuestion } from "lucide-react";
 import jiulongImage from "./assets/performance-jiulong.jpg";
+import jiulongGallery1 from "./assets/jiulong-gallery-1.jpg";
+import jiulongGallery2 from "./assets/jiulong-gallery-2.jpg";
+import jiulongGallery3 from "./assets/jiulong-gallery-3.jpg";
 import fangongImage from "./assets/performance-fangong.jpg";
+import fangongGallery1 from "./assets/fangong-gallery-1.jpg";
+import fangongGallery2 from "./assets/fangong-gallery-2.jpg";
+import fangongGallery3 from "./assets/fangong-gallery-3.jpg";
 import { getPerformanceScheduleState } from "./performanceSchedule";
 
 type PerformanceSchedule = {
@@ -17,13 +23,12 @@ type PerformanceConfig = {
   mapDestination: string;
   description: string;
   arrivalNotice: string;
-  image: string;
+  gallery: string[];
   imageAlt: string;
-  sourceUrl: string;
-  sourceLabel: string;
   validFrom: string;
   validUntil: string;
   schedules: PerformanceSchedule[];
+  highlights: string[];
 };
 
 const defaultPerformanceItems: PerformanceConfig[] = [
@@ -35,16 +40,15 @@ const defaultPerformanceItems: PerformanceConfig[] = [
     mapDestination: "九龙灌浴",
     description: "莲花开启、太子像升起并接受九龙喷水沐浴，适合在景区中轴游览时安排观看。",
     arrivalNotice: "建议提前 10 分钟到达观演区",
-    image: jiulongImage,
+    gallery: [jiulongImage, jiulongGallery1, jiulongGallery2, jiulongGallery3],
     imageAlt: "灵山胜境九龙灌浴景观",
-    sourceUrl: "https://commons.wikimedia.org/wiki/File:%E4%B9%9D%E9%BE%99%E7%81%8C%E6%B5%B4_-_panoramio.jpg",
-    sourceLabel: "gdczjkk · CC BY 3.0",
     validFrom: "2026-07-02T00:00:00+08:00",
     validUntil: "2026-07-31T23:59:59+08:00",
     schedules: [
       { label: "周一至周五", times: ["10:00", "11:30", "14:45", "16:45"] },
       { label: "周六、周日", times: ["10:00", "11:30", "13:00", "14:45", "16:45"] },
     ],
+    highlights: ["建议在中轴游览时段安排观看", "提前到场可避开临近开演的人流", "观看期间请以现场围栏与引导为准"],
   },
   {
     id: "fangong",
@@ -54,15 +58,14 @@ const defaultPerformanceItems: PerformanceConfig[] = [
     mapDestination: "梵宫",
     description: "在梵宫空间中感受木雕、琉璃与穹顶艺术，具体开放区域请遵循现场工作人员指引。",
     arrivalNotice: "建议提前 30 分钟到场排队",
-    image: fangongImage,
+    gallery: [fangongImage, fangongGallery1, fangongGallery2, fangongGallery3],
     imageAlt: "灵山梵宫内部穹顶与飞天艺术",
-    sourceUrl: "https://commons.wikimedia.org/wiki/File:2021%E5%B9%B43%E6%9C%88_%E6%97%A0%E9%94%A1%E7%81%B5%E5%B1%B1%E5%A4%A7%E4%BD%9B_33_%E6%A2%B5%E5%AE%AB.jpg",
-    sourceLabel: "Walter Grassroot · CC BY-SA 4.0",
     validFrom: "2026-07-02T00:00:00+08:00",
     validUntil: "2026-07-31T23:59:59+08:00",
     schedules: [
       { label: "每日", times: ["10:00", "11:00", "12:00", "13:30", "14:30", "15:30"] },
     ],
+    highlights: ["可结合建筑空间与艺术细节慢游", "具体开放区域请留意现场提示", "建议预留步行与到场缓冲时间"],
   },
 ];
 
@@ -74,6 +77,44 @@ function formatValidPeriod(validFrom: string, validUntil: string) {
     day: "numeric",
   });
   return `${formatter.format(new Date(validFrom))}—${formatter.format(new Date(validUntil))}`;
+}
+
+function PerformanceGallery({ item }: { item: PerformanceConfig }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveIndex((index) => (index + 1) % item.gallery.length);
+    }, 4600);
+    return () => window.clearInterval(timer);
+  }, [item.gallery.length]);
+
+  const activeImage = item.gallery[activeIndex] ?? item.gallery[0];
+  return (
+    <div className="performance-visual">
+      <img src={activeImage} alt={item.imageAlt} />
+      <div className="performance-visual-shade" />
+      <div className="performance-title-block">
+        <span>{item.subtitle}</span>
+        <h2>{item.title}</h2>
+        <p><MapPin size={14} aria-hidden="true" /> {item.location}</p>
+      </div>
+      <div className="performance-gallery-tabs" aria-label={`${item.title}图集`}>
+        {item.gallery.map((image, index) => (
+          <button
+            key={image}
+            type="button"
+            className={index === activeIndex ? "active" : ""}
+            onClick={() => setActiveIndex(index)}
+            aria-label={`查看${item.title}第 ${index + 1} 张图片`}
+            aria-pressed={index === activeIndex}
+          >
+            <img src={image} alt="" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function PerformancePage({
@@ -143,18 +184,7 @@ export function PerformancePage({
           const scheduleState = getPerformanceScheduleState(item.validFrom, item.validUntil);
           return (
             <article key={item.id} className={`performance-card is-${item.id} is-${scheduleState}`}>
-              <div className="performance-visual">
-                <img src={item.image} alt={item.imageAlt} />
-                <div className="performance-visual-shade" />
-                <div className="performance-title-block">
-                  <span>{item.subtitle}</span>
-                  <h2>{item.title}</h2>
-                  <p><MapPin size={14} aria-hidden="true" /> {item.location}</p>
-                </div>
-                <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="performance-image-source">
-                  图源：{item.sourceLabel}
-                </a>
-              </div>
+              <PerformanceGallery item={item} />
 
               <div className="performance-detail">
                 <p className="performance-description">{item.description}</p>
@@ -171,6 +201,10 @@ export function PerformancePage({
                         <span>{schedule.times.map((time) => <i key={time}>{time}</i>)}</span>
                       </div>
                     ))}
+                    <div className="performance-highlights" aria-label={`${item.title}游览提示`}>
+                      <strong>观演提示</strong>
+                      <ul>{item.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}</ul>
+                    </div>
                   </div>
                 ) : (
                   <div className="performance-expired-notice" role="status">

@@ -16,7 +16,6 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import scenicMapImage from "./assets/lingshan-map.png";
 import type { VisitorEventType } from "./visitorEvents";
 import {
   recommendRoute,
@@ -115,11 +114,10 @@ type ScenicRoute = {
   durationMinutes: number;
   audienceTags: string[];
   interestTags: string[];
-};
-
-type RouteMapPoint = {
-  x: number;
-  y: number;
+  distanceKm: number;
+  tags: string[];
+  routeStops: Array<{ id: string; name: string; lat: number; lng: number; order: number }>;
+  path: [number, number][];
 };
 
 type WalkingRouteStep = {
@@ -313,6 +311,10 @@ const scenicRoutes: ScenicRoute[] = [
     durationMinutes: 390,
     audienceTags: ["个人", "朋友"],
     interestTags: ["佛教文化", "建筑艺术"],
+    distanceKm: 0,
+    tags: [],
+    routeStops: [],
+    path: [],
   },
   {
     id: "family",
@@ -327,6 +329,10 @@ const scenicRoutes: ScenicRoute[] = [
     durationMinutes: 240,
     audienceTags: ["亲子"],
     interestTags: ["演出体验", "轻松休闲", "拍照打卡"],
+    distanceKm: 0,
+    tags: [],
+    routeStops: [],
+    path: [],
   },
   {
     id: "halfday",
@@ -341,22 +347,12 @@ const scenicRoutes: ScenicRoute[] = [
     durationMinutes: 210,
     audienceTags: ["个人", "朋友", "长者同行"],
     interestTags: ["佛教文化", "建筑艺术"],
+    distanceKm: 0,
+    tags: [],
+    routeStops: [],
+    path: [],
   },
 ];
-
-const ROUTE_MAP_POINTS: Record<string, RouteMapPoint> = {
-  检票口: { x: 40, y: 91 },
-  游客中心: { x: 48, y: 95 },
-  佛足坛: { x: 33, y: 67 },
-  九龙灌浴: { x: 32, y: 55 },
-  灵山佛手: { x: 22, y: 42 },
-  百子戏弥勒: { x: 41, y: 40 },
-  祥符禅寺: { x: 33, y: 34 },
-  灵山大佛: { x: 25, y: 15 },
-  梵宫: { x: 76, y: 42 },
-  五印坛城: { x: 61, y: 63 },
-  景区出口: { x: 61, y: 82 },
-};
 
 function buildNarration(route: ScenicRoute) {
   return [
@@ -595,7 +591,7 @@ export function ScenicMapPanel({
   }) => void;
 }) {
   const [activeRouteId, setActiveRouteId] = useState(
-    defaultMode === "map_guide" ? "halfday" : "classic",
+    defaultMode === "map_guide" ? "halfday" : "blessing-zen",
   );
   const [displayMode, setDisplayMode] = useState<AmapDisplayMode>("standard");
   const [mapState, setMapState] = useState<MapLoadState>("loading");
@@ -701,6 +697,10 @@ export function ScenicMapPanel({
             notes: string[];
             audience_tags: string[];
             interest_tags: string[];
+            distance_km?: number;
+            tags?: string[];
+            route_stops?: Array<{ id: string; name: string; lat: number; lng: number; order: number }>;
+            path?: Array<{ lat: number; lng: number }>;
             enabled: boolean;
             order?: number;
           }>;
@@ -724,6 +724,10 @@ export function ScenicMapPanel({
                 notes: route.notes,
                 audienceTags: route.audience_tags,
                 interestTags: route.interest_tags,
+                distanceKm: route.distance_km ?? 0,
+                tags: route.tags ?? [],
+                routeStops: route.route_stops ?? [],
+                path: (route.path ?? []).map((point) => [point.lng, point.lat]),
               })),
           );
         }
@@ -732,7 +736,7 @@ export function ScenicMapPanel({
     return () => controller.abort();
   }, []);
   useEffect(() => {
-    setActiveRouteId(defaultMode === "map_guide" ? "halfday" : "classic");
+    setActiveRouteId(defaultMode === "map_guide" ? "halfday" : "blessing-zen");
   }, [defaultMode]);
 
   useEffect(() => {
@@ -798,7 +802,7 @@ export function ScenicMapPanel({
   useEffect(() => {
     const sequence = startSuggestionSeqRef.current + 1;
     startSuggestionSeqRef.current = sequence;
-    if (defaultMode !== "map_guide") {
+    if (defaultMode !== "map_guide" && defaultMode !== "route_guide") {
       return undefined;
     }
 
@@ -844,7 +848,7 @@ export function ScenicMapPanel({
   useEffect(() => {
     const sequence = endSuggestionSeqRef.current + 1;
     endSuggestionSeqRef.current = sequence;
-    if (defaultMode !== "map_guide") {
+    if (defaultMode !== "map_guide" && defaultMode !== "route_guide") {
       return undefined;
     }
 
@@ -889,7 +893,7 @@ export function ScenicMapPanel({
 
   useEffect(() => {
     let disposed = false;
-    if (defaultMode !== "map_guide") {
+    if (defaultMode !== "map_guide" && defaultMode !== "route_guide") {
       return undefined;
     }
 
@@ -1008,6 +1012,64 @@ export function ScenicMapPanel({
       }
     };
   }, [defaultMode, mapRetryKey, mapState, selectedEndTip?.id, visibleLandmarks]);
+
+  useEffect(() => {
+    const AMap = amapNamespaceRef.current;
+    const map = mapRef.current;
+    if (defaultMode !== "route_guide" || mapState !== "ready" || !AMap?.Marker || !AMap?.Polyline || !map) {
+      return undefined;
+    }
+
+    if (routeOverlaysRef.current.length > 0) {
+      map.remove(routeOverlaysRef.current);
+    }
+
+    const line = activeRoute.path.length > 1
+      ? new AMap.Polyline({
+          path: activeRoute.path,
+          strokeColor: "#14735d",
+          strokeWeight: 6,
+          strokeOpacity: 0.9,
+          strokeStyle: "dashed",
+          strokeDasharray: [12, 7],
+          lineJoin: "round",
+          lineCap: "round",
+          zIndex: 120,
+        })
+      : null;
+    const markers = activeRoute.routeStops.flatMap((stop) => {
+      if (!Number.isFinite(stop.lng) || !Number.isFinite(stop.lat)) return [];
+      const markerButton = document.createElement("button");
+      markerButton.type = "button";
+      markerButton.className = "amap-route-stop-pin";
+      markerButton.textContent = String(stop.order);
+      markerButton.setAttribute("aria-label", `在地图中查看第 ${stop.order} 站：${stop.name}`);
+      markerButton.title = stop.name;
+      markerButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+      markerButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        map.setCenter([stop.lng, stop.lat]);
+        map.setZoom(17);
+        onOpenMapDestination?.(stop.name);
+      });
+      return [new AMap.Marker({
+        position: [stop.lng, stop.lat],
+        anchor: "bottom-center",
+        content: markerButton,
+        zIndex: 130,
+      })];
+    });
+    const overlays = [...(line ? [line] : []), ...markers];
+    map.add(overlays);
+    routeOverlaysRef.current = overlays;
+    if (overlays.length > 0) {
+      map.setFitView(overlays, false, [38, 38, 38, 430], 16);
+    }
+    return () => {
+      if (mapRef.current === map) map.remove(overlays);
+      if (routeOverlaysRef.current === overlays) routeOverlaysRef.current = [];
+    };
+  }, [activeRoute, defaultMode, mapState, onOpenMapDestination]);
 
   function clearRenderedRoute() {
     routeRequestSeqRef.current += 1;
@@ -1380,6 +1442,9 @@ export function ScenicMapPanel({
         onInterestToggle={toggleInterest}
         onRecommendationApply={applyRouteRecommendation}
         panelRef={panelRef}
+        mapContainerRef={mapContainerRef}
+        mapState={mapState}
+        onRetryMap={retryMapLoad}
       />
     );
   }
@@ -1510,6 +1575,9 @@ function RouteGuideView({
   onInterestToggle,
   onRecommendationApply,
   panelRef,
+  mapContainerRef,
+  mapState,
+  onRetryMap,
 }: {
   activeRoute: ScenicRoute;
   routes: ScenicRoute[];
@@ -1524,42 +1592,30 @@ function RouteGuideView({
   onInterestToggle: (value: RouteInterest) => void;
   onRecommendationApply: (recommendation: RouteRecommendation) => void;
   panelRef: RefObject<HTMLElement | null>;
+  mapContainerRef: RefObject<HTMLDivElement | null>;
+  mapState: MapLoadState;
+  onRetryMap: () => void;
 }) {
-  const plottedStops = activeRoute.stops
-    .map((stop, index) => ({ stop, index, point: ROUTE_MAP_POINTS[stop] }))
-    .filter((item): item is { stop: string; index: number; point: RouteMapPoint } => Boolean(item.point));
-  const routeLine = plottedStops.map(({ point }) => `${point.x},${point.y}`).join(" ");
   const recommendedRoute = recommendation
     ? routes.find((route) => route.id === recommendation.routeId) ?? null
     : null;
 
   return (
     <section ref={panelRef} className="route-guide-experience" aria-label="灵山推荐游览路线">
-      <figure className="route-map-stage">
-        <div className="route-map-artwork">
-          <img src={scenicMapImage} alt="灵山胜境景区导览图" />
-          <svg className="route-map-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <polyline points={routeLine} />
-          </svg>
-          {plottedStops.map(({ stop, index, point }) => (
-            <button
-              key={`${activeRoute.id}-${stop}`}
-              type="button"
-              className="route-map-marker"
-              style={{ left: `${point.x}%`, top: `${point.y}%` }}
-              onClick={() => onOpenMapDestination?.(stop)}
-              aria-label={`在地图导航中查看${stop}`}
-              title={`查看${stop}`}
-            >
-              {index + 1}
-            </button>
-          ))}
-        </div>
-        <figcaption>
+      <div className="route-amap-stage" aria-label={`${activeRoute.name}路线地图`}>
+        <div ref={mapContainerRef} className="route-amap-canvas" />
+        <div className="route-amap-caption">
           <span><i aria-hidden="true" /> {activeRoute.name}</span>
-          <small>点击地图序号可转到步行导航</small>
-        </figcaption>
-      </figure>
+          <small>{activeRoute.distanceKm ? `约 ${activeRoute.distanceKm} 公里 · ${activeRoute.stops.length} 个站点` : "加载路线中"}</small>
+        </div>
+        {mapState === "loading" ? <div className="route-amap-loading">正在加载高德地图…</div> : null}
+        {mapState === "error" ? (
+          <div className="route-amap-error">
+            <span>地图暂时无法加载，可重试或查看完整站点。</span>
+            <button type="button" onClick={onRetryMap}>重新加载</button>
+          </div>
+        ) : null}
+      </div>
 
       <aside className="route-plan-panel" aria-label="路线选择与景点顺序">
         <header className="route-plan-head">

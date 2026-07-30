@@ -84,7 +84,7 @@ def test_scenic_content_save_publish_persists_and_rejects_unsupported_fields():
     assert hidden.json()["enabled"] is False
 
     route = client.patch(
-        "/api/admin/scenic/content/route/halfday",
+        "/api/admin/scenic/content/route/blessing-zen",
         json={
             "duration": "约 3 小时",
             "duration_minutes": 180,
@@ -108,7 +108,7 @@ def test_scenic_content_save_publish_persists_and_rejects_unsupported_fields():
     _reset_scenic_content_cache()
     persisted = client.get("/api/scenic/content").json()["items"]
     assert next(item for item in persisted["poi"] if item["id"] == "local-wuyin")["enabled"] is False
-    assert next(item for item in persisted["route"] if item["id"] == "halfday")["duration_minutes"] == 180
+    assert next(item for item in persisted["route"] if item["id"] == "blessing-zen")["duration_minutes"] == 180
     assert "vr" not in persisted
 
     invalid = client.patch(
@@ -116,3 +116,31 @@ def test_scenic_content_save_publish_persists_and_rejects_unsupported_fields():
         json={"source_url": "https://example.com/not-allowed"},
     )
     assert invalid.status_code == 422
+
+
+def test_route_and_facility_snapshot_is_exposed_as_local_content():
+    content = TestClient(app).get("/api/scenic/content")
+    assert content.status_code == 200
+    items = content.json()["items"]
+
+    routes = items["route"]
+    assert len(routes) == 6
+    assert [route["title"] for route in routes] == [
+        "祈福禅悟线",
+        "文化体验线",
+        "亲子喜乐线",
+        "舌尖上的灵山",
+        "文博探索之旅",
+        "清净自在线（建议全程电瓶车）",
+    ]
+    culture_route = next(route for route in routes if route["id"] == "culture-experience")
+    assert len(culture_route["route_stops"]) == 21
+    assert len(culture_route["path"]) == 80
+
+    categories = {category["id"]: category for category in items["facility_category"]}
+    facilities = items["facility"]
+    assert len(categories) == 17
+    assert len(facilities) == 214
+    assert categories["facility-41"]["title"] == "卫生间"
+    assert sum(item["category_id"] == "facility-41" for item in facilities) == 12
+    assert all(isinstance(item["lng"], float) and isinstance(item["lat"], float) for item in facilities)

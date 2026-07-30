@@ -51,6 +51,9 @@ class AnswerService:
         visitor_type: str = "未提供",
         available_time: str = "未提供",
         route_context: str = "未提供",
+        page_context: str = "未提供",
+        entity_context: str = "未提供",
+        preference_context: str = "未提供",
     ) -> ChatAnswer:
         start = time.perf_counter()
         original_question = question.strip()
@@ -97,6 +100,9 @@ class AnswerService:
             visitor_type=visitor_type,
             available_time=available_time,
             route_context=route_context,
+            page_context=page_context,
+            entity_context=entity_context,
+            preference_context=preference_context,
         )
         chat_config = get_chat_config()
         recent_history = list(

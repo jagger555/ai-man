@@ -652,6 +652,8 @@ export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [visitorPage, setVisitorPage] = useState<VisitorPage>(() => getVisitorPageFromLocation());
   const [mapDestination, setMapDestination] = useState("");
+  const [activeRouteContext, setActiveRouteContext] = useState("");
+  const [activePreferenceContext, setActivePreferenceContext] = useState("");
   const [pipQuestionOpenRequest, setPipQuestionOpenRequest] = useState(0);
   const [activeAdminSection, setActiveAdminSection] =
     useState<AdminSection>("overview");
@@ -1088,7 +1090,10 @@ export function App() {
           current_location: "",
           visitor_type: "",
           available_time: "",
-          route_context: "",
+          route_context: activeRouteContext,
+          page_context: visitorPage === "home" ? "游客首页" : visitorPageMeta[visitorPage].title,
+          entity_context: visitorPage === "map" && mapDestination ? mapDestination : "",
+          preference_context: activePreferenceContext,
         }),
       });
 
@@ -1649,6 +1654,25 @@ export function App() {
                       onNarrationChange={setServiceNarration}
                       onOpenMapDestination={openRouteStopInMap}
                       onAskRouteStop={askAboutRouteStop}
+                      onVisitorEvent={(eventType, metadata) =>
+                        trackVisitorEvent({ eventType, page: "route", metadata })
+                      }
+                      onRouteContextChange={(context) => {
+                        const routeText = [
+                          `当前路线：${context.routeName}`,
+                          `预计用时：${context.duration}`,
+                          `推荐人群：${context.audience}`,
+                          `游览节奏：${context.pace}`,
+                          `景点顺序：${context.stops.join(" → ")}`,
+                        ].join("；");
+                        const preferenceText = [
+                          context.preferences.companion ? `同行：${context.preferences.companion}` : "",
+                          context.preferences.time ? `时间：${context.preferences.time}` : "",
+                          context.preferences.interests.length ? `兴趣：${context.preferences.interests.join("、")}` : "",
+                        ].filter(Boolean).join("；");
+                        setActiveRouteContext((current) => current === routeText ? current : routeText);
+                        setActivePreferenceContext((current) => current === preferenceText ? current : preferenceText);
+                      }}
                     />
                   </div>
                 ) : visitorPage === "map" ? (

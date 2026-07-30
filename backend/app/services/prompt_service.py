@@ -39,6 +39,9 @@ class PromptContext:
     visitor_type: str = "未提供"
     available_time: str = "未提供"
     route_context: str = "未提供"
+    page_context: str = "未提供"
+    entity_context: str = "未提供"
+    preference_context: str = "未提供"
 
 
 def clean_question(question: str) -> str:
@@ -69,6 +72,12 @@ def build_prompt(
         f"{_normalize_context_value(current_context.visitor_type)}\n\n"
         "可用游玩时间：\n"
         f"{_normalize_context_value(current_context.available_time)}\n\n"
+        "当前页面：\n"
+        f"{_normalize_context_value(current_context.page_context)}\n\n"
+        "当前查看对象：\n"
+        f"{_normalize_context_value(current_context.entity_context)}\n\n"
+        "游客主动选择的偏好：\n"
+        f"{_normalize_context_value(current_context.preference_context)}\n\n"
         "知识库检索结果：\n"
         f"{context if context else '无可靠知识片段'}\n\n"
         "地图/路线检索结果：\n"

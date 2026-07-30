@@ -18,6 +18,14 @@ import {
 } from "lucide-react";
 import scenicMapImage from "./assets/lingshan-map.png";
 import type { VisitorEventType } from "./visitorEvents";
+import {
+  recommendRoute,
+  type RouteCompanion,
+  type RouteInterest,
+  type RoutePreferences,
+  type RouteRecommendation,
+  type RouteTime,
+} from "./routeRecommendation";
 
 declare global {
   interface Window {
@@ -104,6 +112,9 @@ type ScenicRoute = {
   summary: string;
   stops: string[];
   notes: string[];
+  durationMinutes: number;
+  audienceTags: string[];
+  interestTags: string[];
 };
 
 type RouteMapPoint = {
@@ -299,6 +310,9 @@ const scenicRoutes: ScenicRoute[] = [
       "景区出口",
     ],
     notes: ["先看核心佛教文化景观", "梵宫与五印坛城安排在后半程", "适合 6-7 小时游览"],
+    durationMinutes: 390,
+    audienceTags: ["个人", "朋友"],
+    interestTags: ["佛教文化", "建筑艺术"],
   },
   {
     id: "family",
@@ -310,6 +324,9 @@ const scenicRoutes: ScenicRoute[] = [
     summary: "减少登高与长距离折返，把互动景观、拍照点和室内空间安排在同一条轻松动线上。",
     stops: ["检票口", "九龙灌浴", "灵山佛手", "百子戏弥勒", "梵宫", "游客中心"],
     notes: ["减少登高与长距离折返", "优先选择互动性强的点位", "适合 4 小时左右"],
+    durationMinutes: 240,
+    audienceTags: ["亲子"],
+    interestTags: ["演出体验", "轻松休闲", "拍照打卡"],
   },
   {
     id: "halfday",
@@ -321,6 +338,9 @@ const scenicRoutes: ScenicRoute[] = [
     summary: "压缩支线停留，优先串联九龙灌浴、灵山大佛、梵宫和五印坛城四处核心景观。",
     stops: ["检票口", "九龙灌浴", "灵山大佛", "梵宫", "五印坛城", "景区出口"],
     notes: ["压缩支线停留", "优先保证大佛、梵宫、五印坛城", "适合 3-4 小时"],
+    durationMinutes: 210,
+    audienceTags: ["个人", "朋友", "长者同行"],
+    interestTags: ["佛教文化", "建筑艺术"],
   },
 ];
 
@@ -552,6 +572,7 @@ export function ScenicMapPanel({
   onOpenMapDestination,
   onNarrationChange,
   onVisitorEvent,
+  onRouteContextChange,
 }: {
   defaultMode: "route_guide" | "map_guide";
   immersive?: boolean;
@@ -563,6 +584,15 @@ export function ScenicMapPanel({
     eventType: VisitorEventType,
     metadata: Record<string, string | number | boolean | string[]>,
   ) => void;
+  onRouteContextChange?: (context: {
+    routeId: string;
+    routeName: string;
+    duration: string;
+    audience: string;
+    pace: string;
+    stops: string[];
+    preferences: RoutePreferences;
+  }) => void;
 }) {
   const [activeRouteId, setActiveRouteId] = useState(
     defaultMode === "map_guide" ? "halfday" : "classic",
@@ -590,6 +620,12 @@ export function ScenicMapPanel({
   const [suggestionStatus, setSuggestionStatus] = useState("输入两个字以上可查看高德地点联想。");
   const [publishedPois, setPublishedPois] = useState<Array<{ id: string; title: string; enabled: boolean }> | null>(null);
   const [publishedRoutes, setPublishedRoutes] = useState<ScenicRoute[] | null>(null);
+  const [routePreferences, setRoutePreferences] = useState<RoutePreferences>({
+    companion: "",
+    time: "",
+    interests: [],
+  });
+  const [confirmedRecommendationId, setConfirmedRecommendationId] = useState("");
   const panelRef = useRef<HTMLElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const routePanelRef = useRef<HTMLDivElement | null>(null);
@@ -602,6 +638,7 @@ export function ScenicMapPanel({
   const routeRequestRef = useRef<AbortController | null>(null);
   const routeRequestSeqRef = useRef(0);
   const locationRequestSeqRef = useRef(0);
+  const lastRecommendationEventRef = useRef("");
   const startAutoCompleteRef = useRef<AMapAutoComplete | null>(null);
   const endAutoCompleteRef = useRef<AMapAutoComplete | null>(null);
   const startSuggestionSeqRef = useRef(0);
@@ -630,6 +667,19 @@ export function ScenicMapPanel({
       : QUICK_DESTINATIONS,
     [publishedPois],
   );
+  const routeRecommendation = useMemo(
+    () => recommendRoute(
+      availableRoutes.map((route) => ({
+        id: route.id,
+        name: route.name,
+        durationMinutes: route.durationMinutes,
+        audienceTags: route.audienceTags,
+        interestTags: route.interestTags,
+      })),
+      routePreferences,
+    ),
+    [availableRoutes, routePreferences],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -638,7 +688,22 @@ export function ScenicMapPanel({
       .then((payload: {
         items?: {
           poi?: Array<{ id: string; title: string; enabled: boolean }>;
-          route?: Array<ScenicRoute & { title?: string; enabled: boolean; order?: number }>;
+          route?: Array<{
+            id: string;
+            title: string;
+            helper: string;
+            duration: string;
+            duration_minutes: number;
+            audience: string;
+            pace: string;
+            summary: string;
+            stops: string[];
+            notes: string[];
+            audience_tags: string[];
+            interest_tags: string[];
+            enabled: boolean;
+            order?: number;
+          }>;
         };
       }) => {
         if (payload.items?.poi) setPublishedPois(payload.items.poi);
@@ -646,7 +711,20 @@ export function ScenicMapPanel({
           setPublishedRoutes(
             payload.items.route
               .filter((route) => route.enabled)
-              .map((route) => ({ ...route, name: route.title ?? route.name })),
+              .map((route) => ({
+                id: route.id,
+                name: route.title,
+                helper: route.helper,
+                duration: route.duration,
+                durationMinutes: route.duration_minutes,
+                audience: route.audience,
+                pace: route.pace,
+                summary: route.summary,
+                stops: route.stops,
+                notes: route.notes,
+                audienceTags: route.audience_tags,
+                interestTags: route.interest_tags,
+              })),
           );
         }
       })
@@ -690,6 +768,32 @@ export function ScenicMapPanel({
       });
     }
   }, [activeRoute, defaultMode, onNarrationChange]);
+
+  useEffect(() => {
+    if (defaultMode !== "route_guide") return;
+    onRouteContextChange?.({
+      routeId: activeRoute.id,
+      routeName: activeRoute.name,
+      duration: activeRoute.duration,
+      audience: activeRoute.audience,
+      pace: activeRoute.pace,
+      stops: activeRoute.stops,
+      preferences: routePreferences,
+    });
+  }, [activeRoute, defaultMode, onRouteContextChange, routePreferences]);
+
+  useEffect(() => {
+    if (defaultMode !== "route_guide" || !routeRecommendation) return;
+    const eventKey = `${routeRecommendation.routeId}:${routeRecommendation.score}:${routePreferences.companion}:${routePreferences.time}:${routePreferences.interests.join(",")}`;
+    if (lastRecommendationEventRef.current === eventKey) return;
+    lastRecommendationEventRef.current = eventKey;
+    const recommendedRoute = availableRoutes.find((route) => route.id === routeRecommendation.routeId);
+    onVisitorEvent?.("route_generate", {
+      routeId: routeRecommendation.routeId,
+      score: routeRecommendation.score,
+      durationMinutes: recommendedRoute?.durationMinutes ?? 0,
+    });
+  }, [availableRoutes, defaultMode, onVisitorEvent, routePreferences, routeRecommendation]);
 
   useEffect(() => {
     const sequence = startSuggestionSeqRef.current + 1;
@@ -1209,6 +1313,57 @@ export function ScenicMapPanel({
     }
   }
 
+  function selectCompanion(companion: RouteCompanion) {
+    const nextCompanion: RouteCompanion | "" = routePreferences.companion === companion ? "" : companion;
+    const nextPreferences = { ...routePreferences, companion: nextCompanion };
+    setRoutePreferences(nextPreferences);
+    setConfirmedRecommendationId("");
+    onVisitorEvent?.("preference_select", {
+      category: "companion",
+      values: nextCompanion ? [nextCompanion] : [],
+    });
+  }
+
+  function selectTime(time: RouteTime) {
+    const nextTime: RouteTime | "" = routePreferences.time === time ? "" : time;
+    const nextPreferences = { ...routePreferences, time: nextTime };
+    setRoutePreferences(nextPreferences);
+    setConfirmedRecommendationId("");
+    onVisitorEvent?.("preference_select", {
+      category: "time",
+      values: nextTime ? [nextTime] : [],
+    });
+  }
+
+  function toggleInterest(interest: RouteInterest) {
+    const interests = routePreferences.interests.includes(interest)
+      ? routePreferences.interests.filter((item) => item !== interest)
+      : [...routePreferences.interests, interest];
+    setRoutePreferences({ ...routePreferences, interests });
+    setConfirmedRecommendationId("");
+    onVisitorEvent?.("preference_select", {
+      category: "interest",
+      values: interests,
+    });
+  }
+
+  function applyRouteRecommendation(recommendation: RouteRecommendation) {
+    const route = availableRoutes.find((item) => item.id === recommendation.routeId);
+    if (!route) return;
+    setActiveRouteId(route.id);
+    setConfirmedRecommendationId(route.id);
+    onVisitorEvent?.("route_confirm", {
+      routeId: route.id,
+      durationMinutes: route.durationMinutes,
+    });
+  }
+
+  function selectRouteManually(routeId: string) {
+    setActiveRouteId(routeId);
+    setConfirmedRecommendationId("");
+    onVisitorEvent?.("route_adjust", { routeId, adjustment: "manual_selection" });
+  }
+
   if (defaultMode === "route_guide") {
     return (
       <RouteGuideView
@@ -1216,7 +1371,14 @@ export function ScenicMapPanel({
         routes={availableRoutes}
         onAskRouteStop={onAskRouteStop}
         onOpenMapDestination={onOpenMapDestination}
-        onRouteChange={setActiveRouteId}
+        onRouteChange={selectRouteManually}
+        preferences={routePreferences}
+        recommendation={routeRecommendation}
+        confirmedRecommendationId={confirmedRecommendationId}
+        onCompanionSelect={selectCompanion}
+        onTimeSelect={selectTime}
+        onInterestToggle={toggleInterest}
+        onRecommendationApply={applyRouteRecommendation}
         panelRef={panelRef}
       />
     );
@@ -1340,6 +1502,13 @@ function RouteGuideView({
   onAskRouteStop,
   onOpenMapDestination,
   onRouteChange,
+  preferences,
+  recommendation,
+  confirmedRecommendationId,
+  onCompanionSelect,
+  onTimeSelect,
+  onInterestToggle,
+  onRecommendationApply,
   panelRef,
 }: {
   activeRoute: ScenicRoute;
@@ -1347,12 +1516,22 @@ function RouteGuideView({
   onAskRouteStop?: (stop: string) => void;
   onOpenMapDestination?: (stop: string) => void;
   onRouteChange: (routeId: string) => void;
+  preferences: RoutePreferences;
+  recommendation: RouteRecommendation | null;
+  confirmedRecommendationId: string;
+  onCompanionSelect: (value: RouteCompanion) => void;
+  onTimeSelect: (value: RouteTime) => void;
+  onInterestToggle: (value: RouteInterest) => void;
+  onRecommendationApply: (recommendation: RouteRecommendation) => void;
   panelRef: RefObject<HTMLElement | null>;
 }) {
   const plottedStops = activeRoute.stops
     .map((stop, index) => ({ stop, index, point: ROUTE_MAP_POINTS[stop] }))
     .filter((item): item is { stop: string; index: number; point: RouteMapPoint } => Boolean(item.point));
   const routeLine = plottedStops.map(({ point }) => `${point.x},${point.y}`).join(" ");
+  const recommendedRoute = recommendation
+    ? routes.find((route) => route.id === recommendation.routeId) ?? null
+    : null;
 
   return (
     <section ref={panelRef} className="route-guide-experience" aria-label="灵山推荐游览路线">
@@ -1392,6 +1571,42 @@ function RouteGuideView({
           <p>{activeRoute.summary}</p>
         </header>
 
+        <section className="route-personalizer" aria-label="个性化路线偏好">
+          <header>
+            <div><strong>按偏好推荐</strong><span>可选，确认后才切换路线</span></div>
+            {recommendation ? <em>{recommendation.score}% 匹配</em> : null}
+          </header>
+          <div className="route-preference-row">
+            <small>同行</small>
+            <div>{(["个人", "朋友", "亲子", "长者同行"] as RouteCompanion[]).map((item) => (
+              <button key={item} type="button" className={preferences.companion === item ? "active" : ""} onClick={() => onCompanionSelect(item)} aria-pressed={preferences.companion === item}>{item}</button>
+            ))}</div>
+          </div>
+          <div className="route-preference-row">
+            <small>时间</small>
+            <div>{(["2 小时", "4 小时", "一日"] as RouteTime[]).map((item) => (
+              <button key={item} type="button" className={preferences.time === item ? "active" : ""} onClick={() => onTimeSelect(item)} aria-pressed={preferences.time === item}>{item}</button>
+            ))}</div>
+          </div>
+          <div className="route-preference-row is-interest">
+            <small>兴趣</small>
+            <div>{(["佛教文化", "建筑艺术", "演出体验", "轻松休闲", "拍照打卡"] as RouteInterest[]).map((item) => (
+              <button key={item} type="button" className={preferences.interests.includes(item) ? "active" : ""} onClick={() => onInterestToggle(item)} aria-pressed={preferences.interests.includes(item)}>{item}</button>
+            ))}</div>
+          </div>
+          {recommendation && recommendedRoute ? (
+            <div className="route-recommendation-result">
+              <div>
+                <span>推荐 {recommendedRoute.name}</span>
+                <small>{recommendation.reasons.join(" · ") || "综合匹配当前偏好"}</small>
+              </div>
+              <button type="button" className={confirmedRecommendationId === recommendedRoute.id ? "confirmed" : ""} onClick={() => onRecommendationApply(recommendation)}>
+                {confirmedRecommendationId === recommendedRoute.id ? "已采用" : "采用推荐"}
+              </button>
+            </div>
+          ) : null}
+        </section>
+
         <nav className="route-plan-tabs" aria-label="推荐路线">
           {routes.map((route) => (
             <button
@@ -1410,11 +1625,11 @@ function RouteGuideView({
           ))}
         </nav>
 
-        <div className="route-profile" aria-label="路线概况">
+        {!recommendation ? <div className="route-profile" aria-label="路线概况">
           <span><Clock3 size={14} aria-hidden="true" /><b>{activeRoute.duration}</b><small>预计时长</small></span>
           <span><UsersRound size={14} aria-hidden="true" /><b>{activeRoute.audience}</b><small>推荐人群</small></span>
           <span><Sparkles size={14} aria-hidden="true" /><b>{activeRoute.pace}</b><small>游览节奏</small></span>
-        </div>
+        </div> : null}
 
         <div className="route-stop-head">
           <strong>景点顺序</strong>

@@ -146,6 +146,9 @@ def test_chat_endpoint_uses_route_context_even_when_knowledge_retrieval_is_unrel
             "session_id": "route-context-session",
             "question": "帮我走过去",
             "route_context": "当前位置：游客中心；目的地：灵山梵宫；路线：沿主路向北步行约8分钟。",
+            "page_context": "游览路线",
+            "entity_context": "半日精华游",
+            "preference_context": "同行：长者同行；时间：4 小时；兴趣：建筑艺术",
         },
     )
 
@@ -155,6 +158,9 @@ def test_chat_endpoint_uses_route_context_even_when_knowledge_retrieval_is_unrel
     assert body["model_status"] == "mock_response"
     assert "地图/路线检索结果" in body["prompt"]
     assert "沿主路向北步行约8分钟" in body["prompt"]
+    assert "当前页面：\n游览路线" in body["prompt"]
+    assert "当前查看对象：\n半日精华游" in body["prompt"]
+    assert "游客主动选择的偏好：\n同行：长者同行" in body["prompt"]
     assert "沿主路向北步行约8分钟" in body["answer"]
 
 

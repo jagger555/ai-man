@@ -1748,7 +1748,7 @@ export function App() {
                 ) : (
                   <div className="visitor-feature-placeholder">
                     <strong>{selectedVisitorPage?.title}</strong>
-                    <p>页面框架已经接入，本专页内容将在对应独立功能分支中完成。</p>
+                    <p>页面暂时无法显示，请返回首页后重试。</p>
                   </div>
                 )}
 

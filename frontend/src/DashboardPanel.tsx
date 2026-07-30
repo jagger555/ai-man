@@ -2,6 +2,7 @@ import type {
   AdminOverview,
   DashboardData,
   LowConfidenceRecord,
+  OperationSuggestion,
   PopularQuestion,
 } from "./types";
 import {
@@ -34,6 +35,8 @@ type DashboardPanelProps = {
     action: LowConfidenceAction,
     record: LowConfidenceRecord,
   ) => void;
+  operationSuggestions: OperationSuggestion[];
+  onOpenModule: (module: OperationSuggestion["module"]) => void;
 };
 
 type Tone = "normal" | "warning" | "danger" | "success";
@@ -189,6 +192,8 @@ export function DashboardPanel({
   onAddKnowledge,
   onMarkUnrelated,
   onReviewLowConfidence,
+  operationSuggestions,
+  onOpenModule,
 }: DashboardPanelProps) {
   const summary = dashboard?.summary;
   const weeklyTrend = dashboard?.service_trend ?? dashboard?.weekly_service_trend ?? [];
@@ -287,7 +292,7 @@ export function DashboardPanel({
   const primaryKnowledgeGap = lowConfidenceRecords.find(
     (record) => record.source_count === 0,
   ) ?? lowConfidenceRecords[0];
-  const operationalDecisions = [
+  const fallbackOperationalDecisions = [
     primaryDemand
       ? {
           level: "high",
@@ -319,6 +324,16 @@ export function DashboardPanel({
         }
       : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
+  const operationalDecisions = operationSuggestions.length > 0
+    ? operationSuggestions.map((item) => ({
+        level: item.priority,
+        title: item.title,
+        evidence: item.evidence.join("；"),
+        action: item.action,
+        actionLabel: "查看相关数据",
+        onClick: () => onOpenModule(item.module),
+      }))
+    : fallbackOperationalDecisions;
 
   return (
     <section className="dashboard-panel operations-console" aria-label="景区 AI 数字人运营控制台">
@@ -425,7 +440,7 @@ export function DashboardPanel({
         <div className="dashboard-card-head operations-card-head">
           <div>
             <strong>智能运营建议</strong>
-            <p>根据真实问答频次、资料命中和游客反馈生成；每条建议都附带数据依据。</p>
+            <p>程序先计算匿名行为指标与规则，大模型只在可用时归纳表达；每条建议保留原始证据。</p>
           </div>
           <span>数据挖掘 · 可追溯</span>
         </div>

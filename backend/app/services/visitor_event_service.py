@@ -299,6 +299,7 @@ def _build_insights(events: list[dict[str, object]], days: int) -> dict[str, obj
         group_distribution.append(
             {"label": label, "count": count, "share": _safe_rate(count, len(events))}
         )
+    event_counts = Counter(str(event["event_type"]) for event in events)
 
     return {
         "summary": {
@@ -322,6 +323,7 @@ def _build_insights(events: list[dict[str, object]], days: int) -> dict[str, obj
         ],
         "page_engagement": page_engagement,
         "event_distribution": group_distribution,
+        "event_counts": dict(event_counts),
         "service_categories": _counter_items(service_categories, 8),
         "route_preferences": _counter_items(preference_counts, 10),
         "daily_trend": daily_trend,

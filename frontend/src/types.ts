@@ -304,6 +304,22 @@ export type VisitorInsights = {
   };
 };
 
+export type OperationSuggestion = {
+  id: string;
+  priority: "high" | "medium" | "low";
+  title: string;
+  evidence: string[];
+  action: string;
+  module: "overview" | "insights" | "crowd" | "content" | "quality" | "knowledge" | "avatar";
+};
+
+export type OperationSuggestionResponse = {
+  period_days: number;
+  engine: "rule_mining" | "rule_mining+llm_explanation" | "rule_mining_fallback";
+  generated_from: string;
+  suggestions: OperationSuggestion[];
+};
+
 export type DashboardSummary = {
   total_records: number;
   question_count: number;

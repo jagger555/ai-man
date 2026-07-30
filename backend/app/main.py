@@ -13,6 +13,7 @@ from app.api.scenic_operations import router as scenic_operations_router
 from app.api.speech import router as speech_router
 from app.api.visitor_report import router as visitor_report_router
 from app.api.visitor_events import router as visitor_events_router
+from app.api.operations_suggestions import router as operations_suggestions_router
 
 
 app = FastAPI(title="AI Digital Human Scenic Guide")
@@ -36,6 +37,7 @@ app.include_router(scenic_operations_router)
 app.include_router(speech_router)
 app.include_router(visitor_report_router)
 app.include_router(visitor_events_router)
+app.include_router(operations_suggestions_router)
 
 
 @app.get("/api/health")

@@ -31,6 +31,8 @@ import type {
   LowConfidenceListResponse,
   LowConfidenceRecord,
   ModelFilter,
+  OperationSuggestion,
+  OperationSuggestionResponse,
   ReliableFilter,
   VisitorInsights,
   VisitorReport,
@@ -695,6 +697,7 @@ export function App() {
   const [visitorInsights, setVisitorInsights] = useState<VisitorInsights | null>(null);
   const [visitorInsightsLoading, setVisitorInsightsLoading] = useState(false);
   const [visitorInsightsError, setVisitorInsightsError] = useState("");
+  const [operationSuggestions, setOperationSuggestions] = useState<OperationSuggestion[]>([]);
   const [feedbackStatus, setFeedbackStatus] = useState<{
     recordId: number;
     rating: FeedbackRating;
@@ -1246,7 +1249,7 @@ export function App() {
 
   function changeAdminTimeRange(range: "today" | "7d" | "30d") {
     setAdminTimeRange(range);
-    void Promise.all([loadDashboard(range), loadVisitorReport(range), loadVisitorInsights(range)]);
+    void Promise.all([loadDashboard(range), loadVisitorReport(range), loadVisitorInsights(range), loadOperationSuggestions(range)]);
   }
 
   async function loadAdminData(range = adminTimeRange) {
@@ -1258,6 +1261,7 @@ export function App() {
       loadFeedbackRecords(),
       loadVisitorReport(range),
       loadVisitorInsights(range),
+      loadOperationSuggestions(range),
     ]);
   }
 
@@ -1402,6 +1406,19 @@ export function App() {
       );
     } finally {
       setVisitorInsightsLoading(false);
+    }
+  }
+
+  async function loadOperationSuggestions(range = adminTimeRange) {
+    try {
+      const result = await fetch(
+        `/api/admin/operations-suggestions?days=${getAdminRangeDays(range)}`,
+      );
+      if (!result.ok) throw new Error();
+      const payload = (await result.json()) as OperationSuggestionResponse;
+      setOperationSuggestions(payload.suggestions);
+    } catch {
+      setOperationSuggestions([]);
     }
   }
 
@@ -1833,6 +1850,8 @@ export function App() {
                 onAddKnowledge={createKnowledgeDraftFromQuestion}
                 onMarkUnrelated={markQuestionUnrelated}
                 onReviewLowConfidence={handleLowConfidenceAction}
+                operationSuggestions={operationSuggestions}
+                onOpenModule={(module) => setActiveAdminSection(module)}
               />
                 ) : null}
 

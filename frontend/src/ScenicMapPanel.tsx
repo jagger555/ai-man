@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import scenicMapImage from "./assets/lingshan-map.png";
+import type { VisitorEventType } from "./visitorEvents";
 
 declare global {
   interface Window {
@@ -550,6 +551,7 @@ export function ScenicMapPanel({
   onAskRouteStop,
   onOpenMapDestination,
   onNarrationChange,
+  onVisitorEvent,
 }: {
   defaultMode: "route_guide" | "map_guide";
   immersive?: boolean;
@@ -557,6 +559,10 @@ export function ScenicMapPanel({
   onAskRouteStop?: (stop: string) => void;
   onOpenMapDestination?: (stop: string) => void;
   onNarrationChange?: (payload: { key: string; text: string }) => void;
+  onVisitorEvent?: (
+    eventType: VisitorEventType,
+    metadata: Record<string, string | number | boolean | string[]>,
+  ) => void;
 }) {
   const [activeRouteId, setActiveRouteId] = useState(
     defaultMode === "map_guide" ? "halfday" : "classic",
@@ -874,6 +880,7 @@ export function ScenicMapPanel({
         setIsPlannerOpen(true);
         map.setCenter(coordinate);
         map.setZoom(17);
+        onVisitorEvent?.("map_search", { destination: displayName, source: "marker" });
       });
 
       return [
@@ -999,6 +1006,7 @@ export function ScenicMapPanel({
       setSelectedEndTip(tip);
       setEndSuggestions([]);
       setSuggestionStatus(`已选择终点：${name}`);
+      onVisitorEvent?.("map_search", { destination: name, source: "suggestion" });
     }
     setActiveSuggestionField(null);
   }
@@ -1023,6 +1031,7 @@ export function ScenicMapPanel({
     setRouteEnd(name);
     setSelectedEndTip(tip);
     setEndSuggestions([]);
+    onVisitorEvent?.("map_search", { destination: name, source: "quick_destination" });
   }
 
   function handleSuggestionKeyDown(
@@ -1093,6 +1102,10 @@ export function ScenicMapPanel({
     routeRequestRef.current = controller;
     setIsPlanning(true);
     setRoutePlanStatus(`正在规划：${startName} → ${endName}`);
+    onVisitorEvent?.("navigation_request", {
+      startMode: startName === "我的位置" ? "current_location" : "selected_place",
+      destination: endName,
+    });
     try {
       const AMap = await loadAmapScript();
       const response = await fetch("/api/navigation/walking", {
@@ -1168,6 +1181,11 @@ export function ScenicMapPanel({
       setRoutePlanStatus(
         `路线已生成：约 ${route.distance} 米 / ${minutes} 分钟，现场请留意开放区域。`,
       );
+      onVisitorEvent?.("navigation_success", {
+        destination: endName,
+        distance: route.distance,
+        duration: route.duration,
+      });
     } catch (error) {
       if (
         requestSequence !== routeRequestSeqRef.current ||
@@ -1176,6 +1194,10 @@ export function ScenicMapPanel({
         return;
       }
       setRoutePlanStatus(error instanceof Error ? error.message : "路线规划组件加载失败");
+      onVisitorEvent?.("navigation_failure", {
+        destination: endName,
+        reason: error instanceof Error ? error.message : "路线规划组件加载失败",
+      });
     } finally {
       if (
         requestSequence === routeRequestSeqRef.current &&

@@ -582,6 +582,8 @@ export function ScenicMapPanel({
   const [isPlanning, setIsPlanning] = useState(false);
   const [isPlannerOpen, setIsPlannerOpen] = useState(!immersive);
   const [suggestionStatus, setSuggestionStatus] = useState("输入两个字以上可查看高德地点联想。");
+  const [publishedPois, setPublishedPois] = useState<Array<{ id: string; title: string; enabled: boolean }> | null>(null);
+  const [publishedRoutes, setPublishedRoutes] = useState<ScenicRoute[] | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const routePanelRef = useRef<HTMLDivElement | null>(null);
@@ -599,10 +601,52 @@ export function ScenicMapPanel({
   const startSuggestionSeqRef = useRef(0);
   const endSuggestionSeqRef = useRef(0);
 
+  const availableRoutes = publishedRoutes ?? scenicRoutes;
   const activeRoute = useMemo(
-    () => scenicRoutes.find((route) => route.id === activeRouteId) ?? scenicRoutes[0],
-    [activeRouteId],
+    () => availableRoutes.find((route) => route.id === activeRouteId) ?? availableRoutes[0] ?? scenicRoutes[0],
+    [activeRouteId, availableRoutes],
   );
+  const visibleLandmarks = useMemo(
+    () => publishedPois
+      ? SCENIC_MAP_LANDMARKS.flatMap((tip) => {
+          const content = publishedPois.find((item) => item.id === tip.id);
+          return content?.enabled ? [{ ...tip, name: content.title }] : [];
+        })
+      : SCENIC_MAP_LANDMARKS,
+    [publishedPois],
+  );
+  const visibleQuickDestinations = useMemo(
+    () => publishedPois
+      ? QUICK_DESTINATIONS.flatMap((tip) => {
+          const content = publishedPois.find((item) => item.id === tip.id);
+          return content?.enabled ? [{ ...tip, name: content.title }] : [];
+        })
+      : QUICK_DESTINATIONS,
+    [publishedPois],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/scenic/content", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
+      .then((payload: {
+        items?: {
+          poi?: Array<{ id: string; title: string; enabled: boolean }>;
+          route?: Array<ScenicRoute & { title?: string; enabled: boolean; order?: number }>;
+        };
+      }) => {
+        if (payload.items?.poi) setPublishedPois(payload.items.poi);
+        if (payload.items?.route) {
+          setPublishedRoutes(
+            payload.items.route
+              .filter((route) => route.enabled)
+              .map((route) => ({ ...route, name: route.title ?? route.name })),
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
   useEffect(() => {
     setActiveRouteId(defaultMode === "map_guide" ? "halfday" : "classic");
   }, [defaultMode]);
@@ -797,7 +841,7 @@ export function ScenicMapPanel({
       map.remove(landmarkMarkersRef.current);
     }
 
-    const markers = SCENIC_MAP_LANDMARKS.flatMap((tip) => {
+    const markers = visibleLandmarks.flatMap((tip) => {
       const coordinate = getTipCoordinate(tip);
       const name = tip.name?.trim();
       if (!coordinate || !name) {
@@ -852,7 +896,7 @@ export function ScenicMapPanel({
         landmarkMarkersRef.current = [];
       }
     };
-  }, [defaultMode, mapRetryKey, mapState, selectedEndTip?.id]);
+  }, [defaultMode, mapRetryKey, mapState, selectedEndTip?.id, visibleLandmarks]);
 
   function clearRenderedRoute() {
     routeRequestSeqRef.current += 1;
@@ -1147,6 +1191,7 @@ export function ScenicMapPanel({
     return (
       <RouteGuideView
         activeRoute={activeRoute}
+        routes={availableRoutes}
         onAskRouteStop={onAskRouteStop}
         onOpenMapDestination={onOpenMapDestination}
         onRouteChange={setActiveRouteId}
@@ -1236,6 +1281,7 @@ export function ScenicMapPanel({
       routePlanStatus={routePlanStatus}
       routeSteps={routeSteps}
       routeSummary={routeSummary}
+      quickDestinations={visibleQuickDestinations}
       routeStart={routeStart}
       routeStartSuggestions={startSuggestions}
       endInputRef={endInputRef}
@@ -1268,12 +1314,14 @@ export function ScenicMapPanel({
 
 function RouteGuideView({
   activeRoute,
+  routes,
   onAskRouteStop,
   onOpenMapDestination,
   onRouteChange,
   panelRef,
 }: {
   activeRoute: ScenicRoute;
+  routes: ScenicRoute[];
   onAskRouteStop?: (stop: string) => void;
   onOpenMapDestination?: (stop: string) => void;
   onRouteChange: (routeId: string) => void;
@@ -1323,7 +1371,7 @@ function RouteGuideView({
         </header>
 
         <nav className="route-plan-tabs" aria-label="推荐路线">
-          {scenicRoutes.map((route) => (
+          {routes.map((route) => (
             <button
               key={route.id}
               type="button"
@@ -1469,6 +1517,7 @@ function AmapNavigationView({
   routeStartSuggestions,
   routeSteps,
   routeSummary,
+  quickDestinations,
   startInputRef,
   suggestionStatus,
 }: {
@@ -1507,6 +1556,7 @@ function AmapNavigationView({
   routeStartSuggestions: AMapTip[];
   routeSteps: WalkingRouteStep[];
   routeSummary: WalkingRouteSummary | null;
+  quickDestinations: AMapTip[];
   startInputRef: RefObject<HTMLInputElement | null>;
   suggestionStatus: string;
 }) {
@@ -1674,7 +1724,7 @@ function AmapNavigationView({
             <div className="quick-destination-block">
               <span>热门目的地</span>
               <div className="quick-destination-list">
-                {QUICK_DESTINATIONS.map((tip) => (
+                {quickDestinations.map((tip) => (
                   <button
                     key={tip.id}
                     type="button"

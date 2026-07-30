@@ -61,16 +61,22 @@ async def get_scenic_status(now: datetime | None = None) -> dict[str, Any]:
     current_time = _normalize_time(now)
     config = get_scenic_status_config()
     weather = await _load_weather(config, current_time)
+    from app.services.crowd_simulation_service import get_operational_crowd_snapshot
+
     return {
         "scenic_name": config.scenic_name,
         "opening": _build_opening_status(current_time),
         "weather": weather,
-        "crowd": build_crowd_snapshot(current_time),
+        "crowd": get_operational_crowd_snapshot(current_time),
         "updated_at": current_time.isoformat(timespec="seconds"),
     }
 
 
-def build_crowd_snapshot(now: datetime | None = None) -> dict[str, Any]:
+def build_crowd_snapshot(
+    now: datetime | None = None,
+    *,
+    scenario: str = "steady",
+) -> dict[str, Any]:
     current_time = _normalize_time(now)
     decimal_hour = _decimal_hour(current_time)
     today_entries, today_exits = _interpolate_totals(decimal_hour)
@@ -78,12 +84,29 @@ def build_crowd_snapshot(now: datetime | None = None) -> dict[str, Any]:
     entries_last_5m = max(0, today_entries - previous_entries)
     exits_last_5m = max(0, today_exits - previous_exits)
 
+    if scenario == "entry_peak" and today_entries > 0:
+        today_entries += min(720, max(180, round(today_entries * 0.16)))
+        entries_last_5m += 42
+    elif scenario == "exit_peak" and today_entries > 0:
+        today_exits = min(
+            today_entries,
+            today_exits + min(720, max(180, round(today_entries * 0.16))),
+        )
+        exits_last_5m += 42
+
+    entry_shares = [float(item["entry_share"]) for item in _ENTRANCES]
+    exit_shares = [float(item["exit_share"]) for item in _ENTRANCES]
+    entrance_entry_totals = _allocate_total(today_entries, entry_shares)
+    entrance_exit_totals = _allocate_total(today_exits, exit_shares)
+    recent_entry_totals = _allocate_total(entries_last_5m, entry_shares)
+    recent_exit_totals = _allocate_total(exits_last_5m, exit_shares)
+
     entrances: list[dict[str, Any]] = []
-    for entrance in _ENTRANCES:
-        entrance_entries = round(today_entries * float(entrance["entry_share"]))
-        entrance_exits = round(today_exits * float(entrance["exit_share"]))
-        recent_entries = round(entries_last_5m * float(entrance["entry_share"]))
-        recent_exits = round(exits_last_5m * float(entrance["exit_share"]))
+    for index, entrance in enumerate(_ENTRANCES):
+        entrance_entries = entrance_entry_totals[index]
+        entrance_exits = entrance_exit_totals[index]
+        recent_entries = recent_entry_totals[index]
+        recent_exits = recent_exit_totals[index]
         entrances.append(
             {
                 "id": entrance["id"],
@@ -282,6 +305,12 @@ def _comfort_level(current_inside: int) -> str:
 
 def _decimal_hour(value: datetime) -> float:
     return value.hour + (value.minute / 60) + (value.second / 3600)
+
+
+def _allocate_total(total: int, shares: list[float]) -> list[int]:
+    allocations = [round(total * share) for share in shares]
+    allocations[-1] += total - sum(allocations)
+    return allocations
 
 
 def _normalize_time(value: datetime | None) -> datetime:

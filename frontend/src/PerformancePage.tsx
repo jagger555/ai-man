@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CalendarClock, Clock3, MapPin, MessageCircleQuestion } from "lucide-react";
 import jiulongImage from "./assets/performance-jiulong.jpg";
 import fangongImage from "./assets/performance-fangong.jpg";
@@ -25,7 +26,7 @@ type PerformanceConfig = {
   schedules: PerformanceSchedule[];
 };
 
-const performanceItems: PerformanceConfig[] = [
+const defaultPerformanceItems: PerformanceConfig[] = [
   {
     id: "jiulong",
     title: "九龙灌浴",
@@ -82,6 +83,51 @@ export function PerformancePage({
   onAskPerformance: (title: string) => void;
   onOpenMap: (destination: string) => void;
 }) {
+  const [performanceItems, setPerformanceItems] = useState(defaultPerformanceItems);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/scenic/content", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
+      .then((payload: {
+        items?: {
+          performance?: Array<{
+            id: string;
+            title: string;
+            subtitle: string;
+            location: string;
+            map_destination: string;
+            description: string;
+            arrival_notice: string;
+            valid_from: string;
+            valid_until: string;
+            schedules: PerformanceSchedule[];
+            enabled: boolean;
+          }>;
+        };
+      }) => {
+        if (!payload.items?.performance) return;
+        const mapped = payload.items.performance.filter((item) => item.enabled).flatMap((item) => {
+          const media = defaultPerformanceItems.find((candidate) => candidate.id === item.id);
+          return media ? [{
+            ...media,
+            title: item.title,
+            subtitle: item.subtitle,
+            location: item.location,
+            mapDestination: item.map_destination,
+            description: item.description,
+            arrivalNotice: item.arrival_notice,
+            validFrom: item.valid_from,
+            validUntil: item.valid_until,
+            schedules: item.schedules,
+          }] : [];
+        });
+        setPerformanceItems(mapped);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
   return (
     <section className="performance-page" aria-label="灵山演出时间与文化体验">
       <header className="performance-page-head">
@@ -148,6 +194,12 @@ export function PerformancePage({
             </article>
           );
         })}
+        {performanceItems.length === 0 ? (
+          <div className="performance-expired-notice" role="status">
+            <Clock3 size={18} aria-hidden="true" />
+            <strong>当前演出安排以景区当日公告为准</strong>
+          </div>
+        ) : null}
       </div>
     </section>
   );

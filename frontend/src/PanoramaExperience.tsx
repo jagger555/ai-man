@@ -59,7 +59,7 @@ export function PanoramaExperience() {
           <span>
             {viewerState === "loading"
               ? "正在连接第三方全景资源。"
-              : "您可以重新加载，或直接打开 720 云原页面查看。"}
+              : "全景资源暂时不可用，请稍后重新加载。"}
           </span>
           {viewerState === "slow" || viewerState === "error" ? (
             <div>
@@ -67,9 +67,6 @@ export function PanoramaExperience() {
                 <RefreshCw size={14} aria-hidden="true" />
                 重新加载
               </button>
-              <a href={PANORAMA_URL} target="_blank" rel="noreferrer">
-                打开原页面
-              </a>
             </div>
           ) : null}
         </div>

@@ -2,12 +2,14 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowLeft,
+  BarChart3,
   Bot,
   CalendarClock,
   Database,
   FileText,
   Headphones,
   Map,
+  MapPinned,
   Mic,
   RefreshCw,
   Route,
@@ -51,6 +53,8 @@ import { ScenicStatusHeader } from "./ScenicStatusHeader";
 import { PanoramaExperience } from "./PanoramaExperience";
 import { PerformancePage } from "./PerformancePage";
 import { VisitorServicesPage } from "./VisitorServicesPage";
+import { AdminCrowdPanel } from "./AdminCrowdPanel";
+import { ScenicContentManager } from "./ScenicContentManager";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -63,7 +67,14 @@ const sampleQuestions = [
 
 const positiveEmojis = ["😊", "😄", "👍", "❤️", "🙏", "🤩", "👏", "🌸"];
 
-type AdminSection = "overview" | "insights" | "qa" | "knowledge" | "avatar";
+type AdminSection =
+  | "overview"
+  | "insights"
+  | "crowd"
+  | "content"
+  | "quality"
+  | "knowledge"
+  | "avatar";
 type GuideIntent = "route_guide" | "performance_time" | "map_guide" | "vr_guide" | "service_guide";
 type VisitorPage = "home" | "route" | "map" | "vr" | "performance" | "services";
 type PendingDashboardAction =
@@ -226,20 +237,32 @@ const adminSections: Array<{
 }> = [
   {
     id: "overview",
-    label: "总览",
+    label: "运营总览",
     description: "服务量与趋势",
     icon: Activity,
   },
   {
     id: "insights",
     label: "游客洞察",
-    description: "报告与反馈",
+    description: "需求与旅程",
     icon: Users,
   },
   {
-    id: "qa",
-    label: "问答质检",
-    description: "记录与风险",
+    id: "crowd",
+    label: "客流运营",
+    description: "入口与分流",
+    icon: BarChart3,
+  },
+  {
+    id: "content",
+    label: "景区内容",
+    description: "路线设施演出",
+    icon: MapPinned,
+  },
+  {
+    id: "quality",
+    label: "服务质检",
+    description: "问答与反馈",
     icon: FileText,
   },
   {
@@ -250,8 +273,8 @@ const adminSections: Array<{
   },
   {
     id: "avatar",
-    label: "数字人形象",
-    description: "Avatar 管理",
+    label: "数字人",
+    description: "形象与连接",
     icon: Bot,
   },
 ];
@@ -731,6 +754,12 @@ export function App() {
     (selectedRecord
       ? filteredRecords.find((record) => record.id === selectedRecord.id)
       : null) ?? filteredRecords[0] ?? null;
+  const feedbackByRecordId = new globalThis.Map(
+    feedbackRecords.map((record) => [record.record_id, record]),
+  );
+  const selectedDetailFeedback = selectedDetailRecord
+    ? feedbackByRecordId.get(selectedDetailRecord.id) ?? null
+    : null;
 
   const adminErrors = [
     recordsError,
@@ -1304,19 +1333,10 @@ export function App() {
     }
   }
 
-  function focusRecordFromPool(recordId: number) {
-    resetFilters();
-    setActiveAdminSection("qa");
-    const matchedRecord = records.find((record) => record.id === recordId);
-    if (matchedRecord) {
-      setSelectedRecord(matchedRecord);
-    }
-  }
-
   function openQuestionDetail(question: string) {
     resetFilters();
     setActiveView("admin");
-    setActiveAdminSection("qa");
+    setActiveAdminSection("quality");
     setKeywordFilter(question);
     const matchedRecord = records.find(
       (record) => record.original_question === question,
@@ -1383,17 +1403,18 @@ export function App() {
     setActiveView("admin");
     if (action === "low-confidence" || action === "high-frequency") {
       resetFilters();
-      setActiveAdminSection("qa");
+      setActiveAdminSection("quality");
       setConfidenceFilter("low");
       return;
     }
     if (action === "unhelpful-feedback") {
-      setActiveAdminSection("insights");
+      resetFilters();
+      setActiveAdminSection("quality");
       return;
     }
     if (action === "irrelevant-question") {
       resetFilters();
-      setActiveAdminSection("qa");
+      setActiveAdminSection("quality");
       setKeywordFilter("股票");
       return;
     }
@@ -1635,6 +1656,13 @@ export function App() {
               </header>
 
               <nav className="admin-tabs" aria-label="管理后台模块">
+                <div className="admin-sidebar-brand" aria-label="灵境导游管理平台">
+                  <span aria-hidden="true">灵</span>
+                  <div>
+                    <strong>灵境导游</strong>
+                    <small>管理平台</small>
+                  </div>
+                </div>
                 {adminSections.map((section) => {
                   const SectionIcon = section.icon;
                   return (
@@ -1653,6 +1681,12 @@ export function App() {
                     </button>
                   );
                 })}
+                <div className="admin-sidebar-foot">
+                  <span>LINGSHAN AI GUIDE</span>
+                  <button type="button" onClick={() => setActiveView("chat")}>
+                    返回游客端
+                  </button>
+                </div>
               </nav>
 
               {adminErrors.map((message, index) => (
@@ -1678,15 +1712,17 @@ export function App() {
               />
                 ) : null}
 
+                {activeAdminSection === "crowd" ? <AdminCrowdPanel /> : null}
+
+                {activeAdminSection === "content" ? <ScenicContentManager /> : null}
+
                 {activeAdminSection === "insights" ? (
-                  <>
               <VisitorReportPanel
                 report={visitorReport}
                 isLoading={visitorReportLoading}
                 error={visitorReportError}
                 onRefresh={() => void loadVisitorReport()}
               />
-                  </>
                 ) : null}
 
                 {activeAdminSection === "avatar" ? (
@@ -1697,103 +1733,29 @@ export function App() {
               />
                 ) : null}
 
-                {activeAdminSection === "insights" ? (
-              <section className="feedback-stream-panel" aria-label="最近反馈">
-                <div className="low-confidence-header">
-                  <div>
-                    <strong>最近反馈</strong>
-                    <p>展示游客对回答的即时评价，方便判断哪些内容需要补充或优化。</p>
-                  </div>
-                  <span className="panel-note">
-                    {feedbackLoading
-                      ? "加载中..."
-                      : `当前 ${feedbackRecords.length} 条 / 累计 ${feedbackTotalCount} 条`}
-                  </span>
-                </div>
-                {feedbackRecords.length > 0 ? (
-                  <div className="feedback-stream">
-                    {feedbackRecords.map((record) => (
-                      <article key={`feedback-${record.id}`} className="feedback-card">
-                        <div className="record-row-top">
-                          <strong>{record.original_question}</strong>
-                          <span>{formatTimestamp(record.updated_at)}</span>
-                        </div>
-                        <div className="record-row-meta">
-                          <span>{record.rating === "helpful" ? "有帮助" : "没有帮助"}</span>
-                          <span>{record.session_id}</span>
-                        </div>
-                        <p>{truncate(record.answer, 90)}</p>
-                        {record.feedback_text ? (
-                          <small>备注：{record.feedback_text}</small>
-                        ) : null}
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    {feedbackLoading ? "正在读取反馈..." : "暂时还没有游客反馈。"}
-                  </div>
-                )}
-              </section>
-                ) : null}
-
-                {activeAdminSection === "qa" ? (
-                  <>
-              <section className="low-confidence-panel" aria-label="低置信度问题池">
-                <div className="low-confidence-header">
-                  <div>
-                    <strong>低置信度问题池</strong>
-                    <p>
-                      聚合展示 reliable=false、confidence 偏低或没有命中资料的提问，
-                      方便继续补充知识库。
-                    </p>
-                  </div>
-                  <span className="panel-note">
-                    {lowConfidenceLoading
-                      ? "加载中..."
-                      : `当前 ${lowConfidenceRecords.length} 条 / 累计 ${lowConfidenceTotalCount} 条`}
-                  </span>
-                </div>
-
-                {lowConfidenceRecords.length > 0 ? (
-                  <div className="low-confidence-grid">
-                    {lowConfidenceRecords.map((record) => (
-                      <button
-                        key={`low-confidence-${record.id}`}
-                        type="button"
-                        className="low-confidence-card"
-                        onClick={() => focusRecordFromPool(record.id)}
-                      >
-                        <div className="record-row-top">
-                          <strong>{record.original_question}</strong>
-                          <span>{formatTimestamp(record.created_at)}</span>
-                        </div>
-                        <div className="record-row-meta">
-                          <span>{record.issue_reason}</span>
-                          <span>Top score {record.top_score.toFixed(2)}</span>
-                          <span>{record.response_time_ms} ms</span>
-                        </div>
-                        <p>{truncate(record.answer, 88)}</p>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    {lowConfidenceLoading
-                      ? "正在加载低置信度问题..."
-                      : "暂未发现低置信度问题，当前知识库命中情况比较稳定。"}
-                  </div>
-                )}
-              </section>
-                  </>
-                ) : null}
-
                 {activeAdminSection === "knowledge" ? (
               <KnowledgeManager initialDraft={knowledgeDraft} />
                 ) : null}
 
-                {activeAdminSection === "qa" ? (
+                {activeAdminSection === "quality" ? (
                   <>
+              <section className="quality-summary-strip" aria-label="服务质检摘要">
+                <article>
+                  <span>低置信问题</span>
+                  <strong>{lowConfidenceTotalCount.toLocaleString("zh-CN")}</strong>
+                  <small>可通过下方可靠性筛选查看</small>
+                </article>
+                <article>
+                  <span>有帮助反馈</span>
+                  <strong>{(dashboard?.summary.feedback_helpful_count ?? 0).toLocaleString("zh-CN")}</strong>
+                  <small>反馈已合并到对应问答记录</small>
+                </article>
+                <article>
+                  <span>无帮助反馈</span>
+                  <strong>{(dashboard?.summary.feedback_unhelpful_count ?? 0).toLocaleString("zh-CN")}</strong>
+                  <small>优先复核低置信与无帮助记录</small>
+                </article>
+              </section>
               <section className="filters-panel" aria-label="问答记录筛选">
                 <div className="filter-field filter-span-2">
                   <label htmlFor="keyword-filter">关键词</label>
@@ -1921,6 +1883,11 @@ export function App() {
                             <span>{getModelLabel(record)}</span>
                             <span>{(record.confidence * 100).toFixed(0)}%</span>
                             <span>{record.response_time_ms} ms</span>
+                            {feedbackByRecordId.has(record.id) ? (
+                              <span className={`feedback-inline is-${feedbackByRecordId.get(record.id)?.rating}`}>
+                                {feedbackByRecordId.get(record.id)?.rating === "helpful" ? "有帮助" : "无帮助"}
+                              </span>
+                            ) : null}
                           </div>
                         </button>
                       ))}
@@ -1972,6 +1939,20 @@ export function App() {
                       <section className="detail-section">
                         <strong>导游式回答</strong>
                         <p>{selectedDetailRecord.answer}</p>
+                      </section>
+
+                      <section className="detail-section">
+                        <strong>游客反馈</strong>
+                        {selectedDetailFeedback ? (
+                          <p>
+                            {selectedDetailFeedback.rating === "helpful" ? "有帮助" : "无帮助"}
+                            {selectedDetailFeedback.feedback_text
+                              ? ` · ${selectedDetailFeedback.feedback_text}`
+                              : " · 游客未填写补充说明"}
+                          </p>
+                        ) : (
+                          <p>该回答暂未收到游客反馈。</p>
+                        )}
                       </section>
 
                       <section className="detail-section">

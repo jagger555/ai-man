@@ -40,6 +40,16 @@ type DashboardPanelProps = {
 };
 
 type Tone = "normal" | "warning" | "danger" | "success";
+type OperationalDecision = {
+  level: "high" | "medium" | "low";
+  title: string;
+  evidence: string;
+  action: string;
+  actionLabel: string;
+  onClick: () => void;
+  domain?: string;
+  sourceLabel?: string;
+};
 type PendingAction =
   | "low-confidence"
   | "high-frequency"
@@ -292,7 +302,7 @@ export function DashboardPanel({
   const primaryKnowledgeGap = lowConfidenceRecords.find(
     (record) => record.source_count === 0,
   ) ?? lowConfidenceRecords[0];
-  const fallbackOperationalDecisions = [
+  const fallbackOperationalDecisionCandidates: Array<OperationalDecision | null> = [
     primaryDemand
       ? {
           level: "high",
@@ -323,13 +333,18 @@ export function DashboardPanel({
           onClick: () => onPendingAction("unhelpful-feedback"),
         }
       : null,
-  ].filter((item): item is NonNullable<typeof item> => item !== null);
-  const operationalDecisions = operationSuggestions.length > 0
+  ];
+  const fallbackOperationalDecisions = fallbackOperationalDecisionCandidates.filter(
+    (item): item is OperationalDecision => item !== null,
+  );
+  const operationalDecisions: OperationalDecision[] = operationSuggestions.length > 0
     ? operationSuggestions.map((item) => ({
         level: item.priority,
         title: item.title,
         evidence: item.evidence.join("；"),
         action: item.action,
+        domain: item.domain,
+        sourceLabel: item.source_label,
         actionLabel: "查看相关数据",
         onClick: () => onOpenModule(item.module),
       }))
@@ -449,6 +464,10 @@ export function DashboardPanel({
             {operationalDecisions.map((decision) => (
               <article key={decision.title} className={`operations-decision-item priority-${decision.level}`}>
                 <div>
+                  <span className="operations-decision-meta">
+                    {decision.domain ? <b>{decision.domain}</b> : null}
+                    {decision.sourceLabel ? <em>{decision.sourceLabel}</em> : null}
+                  </span>
                   <strong>{decision.title}</strong>
                   <span>{decision.evidence}</span>
                 </div>

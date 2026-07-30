@@ -5,7 +5,11 @@ const PANORAMA_URL = "https://www.720yun.com/t/1f2jrOmfkm0";
 
 type ViewerState = "loading" | "slow" | "ready" | "error";
 
-export function PanoramaExperience() {
+export function PanoramaExperience({
+  onViewerStateChange,
+}: {
+  onViewerStateChange?: (state: "ready" | "error") => void;
+}) {
   const [viewerState, setViewerState] = useState<ViewerState>("loading");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -35,8 +39,14 @@ export function PanoramaExperience() {
         allow="fullscreen; autoplay; accelerometer; gyroscope; xr-spatial-tracking"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
-        onLoad={() => setViewerState("ready")}
-        onError={() => setViewerState("error")}
+        onLoad={() => {
+          setViewerState("ready");
+          onViewerStateChange?.("ready");
+        }}
+        onError={() => {
+          setViewerState("error");
+          onViewerStateChange?.("error");
+        }}
       />
 
       {viewerState !== "ready" ? (

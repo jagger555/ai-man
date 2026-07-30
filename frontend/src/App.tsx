@@ -32,6 +32,7 @@ import type {
   LowConfidenceRecord,
   ModelFilter,
   ReliableFilter,
+  VisitorInsights,
   VisitorReport,
 } from "./types";
 import {
@@ -45,7 +46,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { DashboardPanel } from "./DashboardPanel";
 import { DigitalHumanPanel } from "./DigitalHumanPanel";
 import { KnowledgeManager, type KnowledgeDraft } from "./KnowledgeManager";
-import { VisitorReportPanel } from "./VisitorReportPanel";
+import { VisitorInsightsPanel } from "./VisitorInsightsPanel";
 import { AvatarManager } from "./AvatarManager";
 import { StreamingAsrClient } from "./streamingAsrClient";
 import { ScenicMapPanel } from "./ScenicMapPanel";
@@ -55,6 +56,11 @@ import { PerformancePage } from "./PerformancePage";
 import { VisitorServicesPage } from "./VisitorServicesPage";
 import { AdminCrowdPanel } from "./AdminCrowdPanel";
 import { ScenicContentManager } from "./ScenicContentManager";
+import {
+  getAnonymousVisitorSessionId,
+  recordVisitorEvent,
+  type VisitorEventInput,
+} from "./visitorEvents";
 
 const sampleQuestions = [
   "第一次来灵山怎么游？",
@@ -684,6 +690,9 @@ export function App() {
   const [visitorReport, setVisitorReport] = useState<VisitorReport | null>(null);
   const [visitorReportLoading, setVisitorReportLoading] = useState(false);
   const [visitorReportError, setVisitorReportError] = useState("");
+  const [visitorInsights, setVisitorInsights] = useState<VisitorInsights | null>(null);
+  const [visitorInsightsLoading, setVisitorInsightsLoading] = useState(false);
+  const [visitorInsightsError, setVisitorInsightsError] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState<{
     recordId: number;
     rating: FeedbackRating;
@@ -707,7 +716,7 @@ export function App() {
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
   const [knowledgeDraft, setKnowledgeDraft] = useState<KnowledgeDraft | null>(null);
 
-  const sessionId = useMemo(() => `web-${Date.now()}`, []);
+  const sessionId = useMemo(() => getAnonymousVisitorSessionId(), []);
   const asrClientRef = useRef<StreamingAsrClient | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const currentAudioUrlRef = useRef<string | null>(null);
@@ -766,6 +775,7 @@ export function App() {
     overviewError,
     lowConfidenceError,
     feedbackError,
+    visitorInsightsError,
   ].filter(Boolean);
   const adminIsRefreshing =
     recordsLoading ||
@@ -773,7 +783,12 @@ export function App() {
     dashboardLoading ||
     lowConfidenceLoading ||
     feedbackLoading ||
-    visitorReportLoading;
+    visitorReportLoading ||
+    visitorInsightsLoading;
+
+  function trackVisitorEvent(input: VisitorEventInput) {
+    recordVisitorEvent(sessionId, input);
+  }
 
   useEffect(() => {
     const syncVisitorPage = () => {
@@ -796,6 +811,19 @@ export function App() {
       window.removeEventListener("popstate", syncVisitorPage);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeView !== "chat") return undefined;
+    const startedAt = window.performance.now();
+    trackVisitorEvent({ eventType: "page_view", page: visitorPage });
+    if (visitorPage === "performance") {
+      trackVisitorEvent({ eventType: "performance_view", page: visitorPage });
+    }
+    return () => {
+      const seconds = Math.max(1, Math.round((window.performance.now() - startedAt) / 1000));
+      trackVisitorEvent({ eventType: "page_dwell", page: visitorPage, metadata: { seconds } });
+    };
+  }, [activeView, visitorPage, sessionId]);
 
   useEffect(() => {
     if (activeView === "admin") {
@@ -1041,6 +1069,12 @@ export function App() {
     setFeedbackStatus(null);
     setFeedbackText("");
     setIsFeedbackNoteOpen(false);
+    trackVisitorEvent({
+      eventType: "chat_question",
+      page: visitorPage,
+      entityType: "question",
+      metadata: { length: trimmedQuestion.length },
+    });
 
     try {
       const result = await fetch("/api/chat", {
@@ -1062,7 +1096,20 @@ export function App() {
         throw new Error(`问答接口返回 ${result.status}`);
       }
 
-      setResponse((await result.json()) as ChatResponse);
+      const payload = (await result.json()) as ChatResponse;
+      setResponse(payload);
+      trackVisitorEvent({
+        eventType: "chat_reliability",
+        page: visitorPage,
+        entityType: "answer",
+        entityId: payload.record_id == null ? "" : String(payload.record_id),
+        metadata: {
+          reliable: payload.reliable,
+          confidence: payload.confidence,
+          sourceCount: payload.sources.length,
+          latencyMs: payload.latency_ms,
+        },
+      });
       void loadAdminData();
     } catch (caught) {
       setError(caught instanceof Error ? (caught as Error).message : "问答请求失败");
@@ -1118,12 +1165,26 @@ export function App() {
   }
 
   function findVisitorService(searchTerm: string) {
+    trackVisitorEvent({
+      eventType: "service_category",
+      page: "services",
+      entityType: "service",
+      entityId: searchTerm,
+      metadata: { category: searchTerm, action: "map" },
+    });
     setMapDestination(searchTerm);
     setActiveGuideService(guideServiceEntries.find((entry) => entry.id === "map_guide") ?? null);
     navigateToVisitorPage("map");
   }
 
   function consultVisitorService(title: string) {
+    trackVisitorEvent({
+      eventType: "service_category",
+      page: "services",
+      entityType: "service",
+      entityId: title,
+      metadata: { category: title, action: "consult" },
+    });
     setQuestion(`请告诉我如何查找景区内的${title}服务，具体位置以现场标识为准。`);
     setPipQuestionOpenRequest((request) => request + 1);
   }
@@ -1158,6 +1219,13 @@ export function App() {
         recordId: response.record_id,
         rating,
       });
+      trackVisitorEvent({
+        eventType: "feedback",
+        page: visitorPage,
+        entityType: "answer",
+        entityId: String(response.record_id),
+        metadata: { rating },
+      });
       setIsFeedbackNoteOpen(false);
       await Promise.all([loadFeedbackRecords(), loadAdminData()]);
     } catch (caught) {
@@ -1173,7 +1241,7 @@ export function App() {
 
   function changeAdminTimeRange(range: "today" | "7d" | "30d") {
     setAdminTimeRange(range);
-    void Promise.all([loadDashboard(range), loadVisitorReport(range)]);
+    void Promise.all([loadDashboard(range), loadVisitorReport(range), loadVisitorInsights(range)]);
   }
 
   async function loadAdminData(range = adminTimeRange) {
@@ -1184,6 +1252,7 @@ export function App() {
       loadLowConfidenceRecords(),
       loadFeedbackRecords(),
       loadVisitorReport(range),
+      loadVisitorInsights(range),
     ]);
   }
 
@@ -1310,6 +1379,24 @@ export function App() {
       );
     } finally {
       setVisitorReportLoading(false);
+    }
+  }
+
+  async function loadVisitorInsights(range = adminTimeRange) {
+    setVisitorInsightsLoading(true);
+    setVisitorInsightsError("");
+    try {
+      const result = await fetch(
+        `/api/admin/visitor-insights?days=${getAdminRangeDays(range)}`,
+      );
+      if (!result.ok) throw new Error(`游客洞察接口返回 ${result.status}`);
+      setVisitorInsights((await result.json()) as VisitorInsights);
+    } catch (caught) {
+      setVisitorInsightsError(
+        caught instanceof Error ? caught.message : "读取游客洞察失败",
+      );
+    } finally {
+      setVisitorInsightsLoading(false);
     }
   }
 
@@ -1571,11 +1658,24 @@ export function App() {
                       initialDestination={mapDestination}
                       immersive
                       onNarrationChange={setServiceNarration}
+                      onVisitorEvent={(eventType, metadata) =>
+                        trackVisitorEvent({ eventType, page: "map", metadata })
+                      }
                     />
                   </div>
                 ) : visitorPage === "vr" ? (
                   <div className="visitor-feature-content vr-feature-content">
-                    <PanoramaExperience />
+                    <PanoramaExperience
+                      onViewerStateChange={(state) => {
+                        if (state === "ready" || state === "error") {
+                          trackVisitorEvent({
+                            eventType: "vr_load",
+                            page: "vr",
+                            metadata: { state },
+                          });
+                        }
+                      }}
+                    />
                   </div>
                 ) : visitorPage === "performance" ? (
                   <div className="visitor-feature-content performance-feature-content">
@@ -1609,7 +1709,7 @@ export function App() {
                   <p className="eyebrow">ADMIN CONSOLE</p>
                   <h2>灵山胜境 AI 导游管理后台</h2>
                   <p>
-                    问答运营、知识库质检、数字人服务监控
+                    游客洞察、客流调度、景区内容与数字人服务
                   </p>
                 </div>
                 <div className="admin-head-actions" aria-label="后台控制项">
@@ -1717,11 +1817,12 @@ export function App() {
                 {activeAdminSection === "content" ? <ScenicContentManager /> : null}
 
                 {activeAdminSection === "insights" ? (
-              <VisitorReportPanel
+              <VisitorInsightsPanel
+                insights={visitorInsights}
                 report={visitorReport}
-                isLoading={visitorReportLoading}
-                error={visitorReportError}
-                onRefresh={() => void loadVisitorReport()}
+                isLoading={visitorReportLoading || visitorInsightsLoading}
+                error={visitorReportError || visitorInsightsError}
+                onRefresh={() => void Promise.all([loadVisitorReport(), loadVisitorInsights()])}
               />
                 ) : null}
 

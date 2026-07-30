@@ -260,6 +260,50 @@ export type VisitorReport = {
   suggestions: VisitorReportSuggestion[];
 };
 
+export type VisitorInsightSummary = {
+  period_days: number;
+  anonymous_sessions: number;
+  event_count: number;
+  feature_sessions: number;
+  action_sessions: number;
+  completed_sessions: number;
+  feature_reach_rate: number;
+  action_rate: number;
+  average_session_minutes: number;
+};
+
+export type VisitorInsightItem = {
+  label: string;
+  count: number;
+  share: number;
+};
+
+export type VisitorInsights = {
+  summary: VisitorInsightSummary;
+  journey_funnel: Array<{ stage: string; sessions: number }>;
+  page_engagement: Array<{
+    page: string;
+    label: string;
+    views: number;
+    unique_sessions: number;
+    average_dwell_seconds: number;
+  }>;
+  event_distribution: VisitorInsightItem[];
+  service_categories: VisitorInsightItem[];
+  route_preferences: VisitorInsightItem[];
+  daily_trend: Array<{
+    date: string;
+    sessions: number;
+    events: number;
+    actions: number;
+  }>;
+  data_policy: {
+    anonymous: boolean;
+    retention_days: number;
+    excluded: string[];
+  };
+};
+
 export type DashboardSummary = {
   total_records: number;
   question_count: number;

@@ -23,4 +23,5 @@ output/
 # Temp / runtime
 tmp/
 *.log
+data/runtime/scenic_content_state.json
 .idea/

@@ -213,6 +213,7 @@ export function DashboardPanel({
   const mockModelCount = overview?.mock_model_count ?? 0;
   const fallbackCount = overview?.fallback_count ?? 0;
   const modelTotal = realModelCount + mockModelCount + fallbackCount;
+  const highFrequencyQuestionCount = popularQuestions.filter((item) => item.count >= 2).length;
 
   const kpiCards = [
     {
@@ -223,32 +224,11 @@ export function DashboardPanel({
       tone: "normal" as Tone,
     },
     {
-      label: "累计问答数",
-      value: formatNumber(summary?.question_count),
-      trend: "历史累计",
-      helper: "系统已自动落库的正常问答记录。",
-      tone: "normal" as Tone,
-    },
-    {
-      label: "积极 Emoji 互动",
-      value: formatNumber(summary?.emoji_interaction_count),
-      trend: "固定回复",
-      helper: "仅展示积极互动，不参与问答质检。",
-      tone: "success" as Tone,
-    },
-    {
       label: "平均响应时间",
       value: formatMs(summary?.average_response_time_ms),
       trend: periodLabel,
       helper: "仅统计当前范围内的正常问答耗时。",
       tone: "success" as Tone,
-    },
-    {
-      label: "低置信问题数",
-      value: formatNumber(summary?.low_confidence_count),
-      trend: "需复核",
-      helper: "仅统计当前范围内需要复核的正常问题。",
-      tone: "warning" as Tone,
     },
     {
       label: "有帮助率",
@@ -269,9 +249,9 @@ export function DashboardPanel({
     },
     {
       action: "high-frequency" as PendingAction,
-      label: "高频未命中问题",
-      count: Math.max(0, Math.round((summary?.low_confidence_count ?? 0) * 0.34)),
-      hint: "建议归并同类问法后补入知识库。",
+      label: "高频游客需求",
+      count: highFrequencyQuestionCount,
+      hint: "建议将高频问题转为首页提示或服务快捷入口。",
       tone: "warning" as Tone,
     },
     {
@@ -290,9 +270,9 @@ export function DashboardPanel({
     },
     {
       action: "digital-human" as PendingAction,
-      label: "设备或数字人异常",
+      label: "模型降级记录",
       count: fallbackCount,
-      hint: "关注模型降级、Mock 回复和数字人连接状态。",
+      hint: "仅根据问答记录中的 Fallback 状态统计。",
       tone: fallbackCount > 0 ? "warning" as Tone : "success" as Tone,
     },
   ];
@@ -301,6 +281,44 @@ export function DashboardPanel({
     ...item,
     ...classifyQuestion(item.question),
   }));
+  const primaryDemand = classifiedQuestions.find(
+    (item) => !item.issueHint && item.count > 0,
+  );
+  const primaryKnowledgeGap = lowConfidenceRecords.find(
+    (record) => record.source_count === 0,
+  ) ?? lowConfidenceRecords[0];
+  const operationalDecisions = [
+    primaryDemand
+      ? {
+          level: "high",
+          title: `强化“${truncateText(primaryDemand.question, 18)}”前台入口`,
+          evidence: `${periodLabel}提问 ${primaryDemand.count} 次，属于${primaryDemand.category}需求。`,
+          action: "将对应内容放入首页快捷问题或服务入口，并观察下一周期提问量是否下降。",
+          actionLabel: "查看原始问答",
+          onClick: () => onViewQuestion(primaryDemand.question),
+        }
+      : null,
+    primaryKnowledgeGap
+      ? {
+          level: "medium",
+          title: `补齐“${truncateText(primaryKnowledgeGap.original_question, 18)}”知识`,
+          evidence: `置信度 ${formatPercent(primaryKnowledgeGap.confidence)}，命中资料 ${primaryKnowledgeGap.source_count} 条。`,
+          action: "补充官方资料后使用原问题复测，确认回答内容和来源均可追溯。",
+          actionLabel: "创建知识任务",
+          onClick: () => onAddKnowledge(primaryKnowledgeGap.original_question),
+        }
+      : null,
+    (summary?.feedback_unhelpful_count ?? 0) > 0
+      ? {
+          level: "high",
+          title: "优先复核无帮助反馈",
+          evidence: `${periodLabel}记录到 ${summary?.feedback_unhelpful_count ?? 0} 条无帮助反馈。`,
+          action: "按问题主题归并反馈，先处理重复出现且会影响游客现场决策的答案。",
+          actionLabel: "进入游客反馈",
+          onClick: () => onPendingAction("unhelpful-feedback"),
+        }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
 
   return (
     <section className="dashboard-panel operations-console" aria-label="景区 AI 数字人运营控制台">
@@ -403,6 +421,32 @@ export function DashboardPanel({
         </section>
       </div>
 
+      <section className="dashboard-card operations-card decision-card">
+        <div className="dashboard-card-head operations-card-head">
+          <div>
+            <strong>智能运营建议</strong>
+            <p>根据真实问答频次、资料命中和游客反馈生成；每条建议都附带数据依据。</p>
+          </div>
+          <span>数据挖掘 · 可追溯</span>
+        </div>
+        {operationalDecisions.length > 0 ? (
+          <div className="operations-decision-grid">
+            {operationalDecisions.map((decision) => (
+              <article key={decision.title} className={`operations-decision-item priority-${decision.level}`}>
+                <div>
+                  <strong>{decision.title}</strong>
+                  <span>{decision.evidence}</span>
+                </div>
+                <p>{decision.action}</p>
+                <button type="button" onClick={decision.onClick}>{decision.actionLabel}</button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState label="当前有效数据较少，继续积累问答与反馈后生成建议。" />
+        )}
+      </section>
+
       <section className="dashboard-card operations-card trend-card">
         <div className="dashboard-card-head operations-card-head">
           <div>
@@ -465,7 +509,7 @@ export function DashboardPanel({
         )}
       </section>
 
-      <section className="dashboard-card operations-card qa-ranking-card">
+      {false ? <><section className="dashboard-card operations-card qa-ranking-card">
         <div className="dashboard-card-head operations-card-head">
           <div>
             <strong>热门问答排行</strong>
@@ -651,6 +695,7 @@ export function DashboardPanel({
           </div>
         </div>
       </section>
+      </> : null}
     </section>
   );
 }

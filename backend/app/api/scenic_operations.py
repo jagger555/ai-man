@@ -34,6 +34,7 @@ class ScenicContentPatch(BaseModel):
     notes: list[str] | None = None
     audience_tags: list[str] | None = None
     interest_tags: list[str] | None = None
+    tags: list[str] | None = None
     subtitle: str | None = Field(default=None, max_length=120)
     location: str | None = Field(default=None, max_length=120)
     map_destination: str | None = Field(default=None, max_length=120)

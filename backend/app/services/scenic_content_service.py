@@ -8,6 +8,96 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from app.services.lingshan_snapshot import load_lingshan_snapshot
+
+
+def _route_defaults() -> list[dict[str, Any]]:
+    """Normalize the approved route snapshot for the existing content API."""
+
+    snapshot = load_lingshan_snapshot()
+    route_ids = {
+        "祈福禅悟线": "blessing-zen",
+        "文化体验线": "culture-experience",
+        "亲子喜乐线": "family-joy",
+        "舌尖上的灵山": "lingshan-flavors",
+        "文博探索之旅": "museum-exploration",
+        "清净自在线（建议全程电瓶车）": "easy-electric-tour",
+    }
+    routes: list[dict[str, Any]] = []
+    for order, route in enumerate(snapshot["routes"], start=1):
+        flat_path = route["path"]
+        path = [
+            {"lng": float(flat_path[index]), "lat": float(flat_path[index + 1])}
+            for index in range(0, len(flat_path), 2)
+        ]
+        stops = [
+            {
+                "id": stop["id"],
+                "name": stop["name"],
+                "lat": float(stop["lat"]),
+                "lng": float(stop["lng"]),
+                "order": stop_order,
+            }
+            for stop_order, stop in enumerate(route["stops"], start=1)
+        ]
+        duration_hours = float(route["durationHours"])
+        distance_km = float(route["distanceKm"])
+        tags = [str(tag) for tag in route.get("tags", []) if str(tag).strip()]
+        routes.append(
+            {
+                "id": route_ids.get(route["name"], route["id"]),
+                "title": route["name"],
+                "helper": " / ".join(tags[:2]) or "景区主题游览路线",
+                "duration": f"约 {duration_hours:g} 小时",
+                "duration_minutes": round(duration_hours * 60),
+                "audience": tags[0] if tags else "景区游客",
+                "pace": "景区推荐",
+                "summary": f"全程约 {distance_km:g} 公里，共 {len(stops)} 个推荐停靠点。",
+                "stops": [stop["name"] for stop in stops],
+                "route_stops": stops,
+                "path": path,
+                "distance_km": distance_km,
+                "tags": tags,
+                "notes": [],
+                "audience_tags": [],
+                "interest_tags": tags,
+                "enabled": True,
+                "featured": order == 1,
+                "order": order * 10,
+            }
+        )
+    return routes
+
+
+def _facility_category_defaults() -> list[dict[str, Any]]:
+    snapshot = load_lingshan_snapshot()
+    return [
+        {
+            "id": category["id"],
+            "title": category["name"],
+            "is_common": bool(category["isCommon"]),
+            "enabled": True,
+            "order": int(category["sort"]),
+        }
+        for category in snapshot["facilityCategories"]
+    ]
+
+
+def _facility_defaults() -> list[dict[str, Any]]:
+    snapshot = load_lingshan_snapshot()
+    return [
+        {
+            "id": facility["id"],
+            "title": facility["name"],
+            "category_id": facility["categoryId"],
+            "lat": float(facility["lat"]),
+            "lng": float(facility["lng"]),
+            "enabled": True,
+            "order": index,
+        }
+        for index, facility in enumerate(snapshot["facilities"], start=1)
+    ]
+
 
 _DEFAULT_CONTENT: dict[str, list[dict[str, Any]]] = {
     "poi": [
@@ -67,10 +157,20 @@ _DEFAULT_CONTENT: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+# Replace the legacy three-route seed with the approved six-route snapshot.
+# Facility data is exposed through the same content endpoint so both visitor
+# pages and the admin console read a single, versioned source of truth.
+_DEFAULT_CONTENT["route"] = _route_defaults()
+_DEFAULT_CONTENT["facility_category"] = _facility_category_defaults()
+_DEFAULT_CONTENT["facility"] = _facility_defaults()
+
+
 _ALLOWED_FIELDS = {
     "poi": {"title", "category", "summary", "enabled", "featured", "order"},
-    "route": {"title", "helper", "duration", "duration_minutes", "audience", "pace", "summary", "stops", "notes", "audience_tags", "interest_tags", "enabled", "featured", "order"},
+    "route": {"title", "helper", "duration", "duration_minutes", "audience", "pace", "summary", "stops", "notes", "audience_tags", "interest_tags", "tags", "enabled", "featured", "order"},
     "performance": {"title", "subtitle", "location", "map_destination", "description", "arrival_notice", "valid_from", "valid_until", "schedules", "enabled", "featured", "order"},
+    "facility_category": {"title", "enabled", "order"},
+    "facility": {"title", "enabled", "order"},
 }
 
 _lock = RLock()
@@ -111,7 +211,7 @@ def _normalize_changes(kind: str, changes: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError("title cannot be empty")
             normalized[field] = value
 
-    for field in ("stops", "notes", "audience_tags", "interest_tags"):
+    for field in ("stops", "notes", "audience_tags", "interest_tags", "tags"):
         if field in normalized:
             if not isinstance(normalized[field], list):
                 raise ValueError(f"{field} must be a list")

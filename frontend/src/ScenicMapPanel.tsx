@@ -13,7 +13,6 @@ import {
   PanelLeftOpen,
   Route,
   Sparkles,
-  UsersRound,
   X,
 } from "lucide-react";
 import type { VisitorEventType } from "./visitorEvents";
@@ -1754,12 +1753,11 @@ function RouteGuideView({
             <h2>{activeRoute.name}</h2>
             <span>{activeRoute.helper}</span>
           </div>
-          <p>{activeRoute.summary}</p>
         </header>
 
         <section className="route-personalizer" aria-label="个性化路线偏好">
           <header>
-            <div><strong>按偏好推荐</strong><span>可选，确认后才切换路线</span></div>
+            <div><strong>按偏好推荐</strong></div>
             {recommendation ? <em>{recommendation.score}% 匹配</em> : null}
           </header>
           <div className="route-preference-row">
@@ -1811,12 +1809,6 @@ function RouteGuideView({
           ))}
         </nav>
 
-        {!recommendation ? <div className="route-profile" aria-label="路线概况">
-          <span><Clock3 size={14} aria-hidden="true" /><b>{activeRoute.duration}</b><small>预计时长</small></span>
-          <span><UsersRound size={14} aria-hidden="true" /><b>{activeRoute.audience}</b><small>推荐人群</small></span>
-          <span><Sparkles size={14} aria-hidden="true" /><b>{activeRoute.pace}</b><small>游览节奏</small></span>
-        </div> : null}
-
         <div className="route-stop-head">
           <strong>景点顺序</strong>
           <span>{activeRoute.stops.length} 站 · 完整展示</span>
@@ -1848,10 +1840,6 @@ function RouteGuideView({
           ))}
         </ol>
 
-        <footer className="route-plan-note">
-          <Navigation size={14} aria-hidden="true" />
-          路线为游览顺序建议，现场请以开放区域和景区指示为准。
-        </footer>
       </aside>
     </section>
   );

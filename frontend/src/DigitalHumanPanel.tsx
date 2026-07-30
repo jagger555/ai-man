@@ -99,14 +99,6 @@ function ScenicStageFrame({ children }: { children: ReactNode }) {
   return <div className="scenic-stage-frame">{children}</div>;
 }
 
-function getCaptionText(latestAnswer: string) {
-  const trimmedAnswer = latestAnswer.trim();
-  if (!trimmedAnswer) {
-    return "您好，我是灵山数字导游，可以为您介绍路线、景点和文化故事。";
-  }
-  return trimmedAnswer.length > 58 ? `${trimmedAnswer.slice(0, 58)}...` : trimmedAnswer;
-}
-
 export function DigitalHumanPanel({
   latestAnswer,
   latestAnswerKey,
@@ -730,7 +722,7 @@ export function DigitalHumanPanel({
         }
       : undefined;
 
-  const fullCaption = latestAnswer.trim() || "您好，我是灵山数字导游，可以为您介绍路线、景点和文化故事。";
+  const fullCaption = latestAnswer.trim();
   const shouldScrollCaption = fullCaption.length > 22 && !isCaptionExpanded;
   const captionScrollDuration = Math.min(60, Math.max(24, Math.ceil(fullCaption.length / 2.2)));
 
@@ -800,7 +792,7 @@ export function DigitalHumanPanel({
           ) : null}
         </div>
       </ScenicStageFrame>
-      {mode === "pip" ? (
+      {mode === "pip" && fullCaption ? (
         <button
           type="button"
           className={`stage-caption pip-caption${shouldScrollCaption ? " is-scrolling" : ""}`}
@@ -816,9 +808,11 @@ export function DigitalHumanPanel({
             {shouldScrollCaption ? <span aria-hidden="true">{fullCaption}</span> : null}
           </span>
         </button>
-      ) : (
-        <p className="stage-caption">{getCaptionText(latestAnswer)}</p>
-      )}
+      ) : mode === "stage" && fullCaption ? (
+        <p className="stage-caption">
+          {fullCaption.length > 58 ? `${fullCaption.slice(0, 58)}...` : fullCaption}
+        </p>
+      ) : null}
 
       {mode === "pip" ? (
         <>

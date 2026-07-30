@@ -4298,6 +4298,12 @@ textarea {
   overflow: hidden;
 }
 
+.scenic-guide-page:not(.admin-page) {
+  background:
+    linear-gradient(rgba(250, 248, 238, 0.18), rgba(244, 249, 241, 0.22)),
+    url("./assets/lingshan-watercolor-bg.png") center / cover fixed;
+}
+
 .left-column[hidden] {
   display: none;
 }
@@ -8182,6 +8188,44 @@ textarea {
   background: rgba(18, 72, 59, 0.96);
 }
 
+.visitor-history-controls {
+  position: fixed;
+  z-index: 121;
+  top: 20px;
+  left: 174px;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  border: 1px solid rgba(37, 97, 80, 0.16);
+  border-radius: 12px 4px 12px 4px;
+  padding: 4px;
+  background: rgba(255, 253, 247, 0.9);
+  box-shadow: 0 8px 22px rgba(20, 61, 51, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.visitor-history-controls button {
+  min-width: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px 3px 8px 3px;
+  padding: 0 8px;
+  color: #285f50;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.visitor-history-controls button:hover,
+.visitor-history-controls button:focus-visible {
+  color: #fff;
+  background: #27735e;
+  outline: none;
+}
+
 .visitor-feature-head > div {
   min-width: 0;
 }
@@ -8301,8 +8345,8 @@ textarea {
 
 .performance-feature-content {
   background:
-    radial-gradient(circle at 12% 18%, rgba(218, 170, 79, 0.13), transparent 26%),
-    linear-gradient(145deg, #f8f4e9, #e8f1e9);
+    linear-gradient(rgba(249, 247, 239, 0.62), rgba(238, 246, 239, 0.74)),
+    url("./assets/lingshan-watercolor-bg.png") center / cover;
 }
 
 .performance-page {
@@ -9663,9 +9707,8 @@ textarea {
 
 .services-feature-content {
   background:
-    radial-gradient(circle at 82% 12%, rgba(214, 170, 79, 0.14), transparent 25%),
-    radial-gradient(circle at 10% 84%, rgba(47, 118, 100, 0.12), transparent 30%),
-    linear-gradient(145deg, #f7f4ea, #e7f1eb);
+    linear-gradient(rgba(247, 246, 237, 0.63), rgba(231, 241, 235, 0.72)),
+    url("./assets/lingshan-watercolor-bg.png") center / cover;
 }
 
 .visitor-services-page {
@@ -10660,8 +10703,8 @@ textarea {
 .route-feature-content {
   height: 100%;
   background:
-    radial-gradient(circle at 78% 12%, rgba(214, 168, 79, 0.2), transparent 30%),
-    linear-gradient(145deg, #e7f0e5, #f7f1df 54%, #dbe9df);
+    linear-gradient(rgba(231, 240, 229, 0.46), rgba(247, 241, 223, 0.54)),
+    url("./assets/lingshan-watercolor-bg.png") center / cover;
 }
 
 .route-guide-experience {

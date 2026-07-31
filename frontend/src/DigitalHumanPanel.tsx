@@ -128,6 +128,7 @@ export function DigitalHumanPanel({
   const pipDragRef = useRef<PipDragState | null>(null);
   const pipAnchorRef = useRef<PipAnchor | null>(null);
   const suppressPipExpandClickRef = useRef(false);
+  const pipQuestionInputRef = useRef<HTMLInputElement | null>(null);
   const lastPipQuestionOpenRequestRef = useRef(pipQuestionOpenRequest);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
@@ -189,6 +190,22 @@ export function DigitalHumanPanel({
     }
     lastPipQuestionOpenRequestRef.current = pipQuestionOpenRequest;
   }, [mode, pipQuestionOpenRequest]);
+
+  useEffect(() => {
+    if (mode !== "pip" || !isPipQuestionOpen) {
+      return;
+    }
+    const input = pipQuestionInputRef.current;
+    if (!input) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      const end = input.value.length;
+      input.focus();
+      input.setSelectionRange(end, end);
+      input.scrollLeft = input.scrollWidth;
+    });
+  }, [mode, isPipQuestionOpen]);
 
   useEffect(() => {
     if (mode !== "pip") {
@@ -802,6 +819,7 @@ export function DigitalHumanPanel({
               <label htmlFor="pip-guide-question">向数字导游提问</label>
               <div className="pip-question-row">
                 <input
+                  ref={pipQuestionInputRef}
                   id="pip-guide-question"
                   value={question}
                   onChange={(event) => onQuestionChange?.(event.target.value)}

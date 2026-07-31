@@ -746,16 +746,6 @@ export function DigitalHumanPanel({
     >
       <MistMountainLayer />
       {mode === "pip" && isPipDragging ? <span className="pip-drag-shield" aria-hidden="true" /> : null}
-      {mode === "pip" ? (
-        <svg className="pip-avatar-mask-defs" aria-hidden="true">
-          <defs>
-            <clipPath id="guide-pip-avatar-clip" clipPathUnits="objectBoundingBox">
-              <ellipse cx="0.5" cy="0.25" rx="0.19" ry="0.24" />
-              <path d="M 0.29 0.42 Q 0.5 0.36 0.71 0.42 L 0.94 1 L 0.06 1 Z" />
-            </clipPath>
-          </defs>
-        </svg>
-      ) : null}
       {mode === "stage" ? (
         <div className="stage-head">
           <div className="stage-title-block">

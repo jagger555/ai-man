@@ -2,6 +2,7 @@
 setlocal EnableExtensions
 
 set "PROJECT_ROOT="
+set "LIVE_TALKING_PATH="
 set "START_ARGS=%*"
 
 rem 1. An explicitly configured project root takes priority.
@@ -32,13 +33,19 @@ if not exist "%PROJECT_ROOT%\scripts\start-local.ps1" (
     exit /b 1
 )
 
+rem Prefer an explicitly configured external LiveTalking root.  The PowerShell
+rem launcher accepts either the parent directory or the nested app directory.
+if defined LIVETALKING_ROOT set "LIVE_TALKING_PATH=%LIVETALKING_ROOT%"
+if not defined LIVE_TALKING_PATH set "LIVE_TALKING_PATH=%PROJECT_ROOT%.\LiveTalking"
+if "%LIVE_TALKING_PATH:~-1%"=="\" set "LIVE_TALKING_PATH=%LIVE_TALKING_PATH%."
+
 echo.
 echo Starting AI Digital Human Scenic Guide...
 rem `%~dp0` ends in a backslash.  A backslash immediately before a closing
 rem quote escapes that quote for PowerShell's native command-line parser,
 rem causing later options to be absorbed into ProjectRoot.  Appending `.`
 rem keeps the directory path equivalent while making the closing quote safe.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_ROOT%\scripts\start-local.ps1" -ProjectRoot "%PROJECT_ROOT%." -LiveTalkingPath "%PROJECT_ROOT%.\LiveTalking" %START_ARGS%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_ROOT%\scripts\start-local.ps1" -ProjectRoot "%PROJECT_ROOT%." -LiveTalkingPath "%LIVE_TALKING_PATH%" %START_ARGS%
 
 echo.
 pause

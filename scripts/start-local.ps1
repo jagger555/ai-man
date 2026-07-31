@@ -8,6 +8,8 @@ param(
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 5173,
     [string]$LiveTalkingModel = "wav2lip",
+    [string]$LiveTalkingTts = "qwentts",
+    [string]$LiveTalkingVoice = "Cherry",
     [string]$LiveTalkingAvatarId = "626",
     [int]$LiveTalkingMaxSession = 2,
     [int]$LiveTalkingReadyTimeoutSeconds = 90,
@@ -205,18 +207,82 @@ function Start-ManagedProcess {
     return Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -WindowStyle $windowStyle -PassThru
 }
 
+function Get-DotEnvValue {
+    param(
+        [string]$Path,
+        [string[]]$Names
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+        $trimmedLine = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmedLine) -or $trimmedLine.StartsWith("#")) {
+            continue
+        }
+
+        foreach ($name in $Names) {
+            $prefix = "$name="
+            if (-not $trimmedLine.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $value = $trimmedLine.Substring($prefix.Length).Trim()
+            if ($value.Length -ge 2) {
+                $first = $value[0]
+                $last = $value[$value.Length - 1]
+                if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+                    $value = $value.Substring(1, $value.Length - 2)
+                }
+            }
+            return $value
+        }
+    }
+
+    return $null
+}
+
+function Initialize-LiveTalkingTtsEnvironment {
+    param(
+        [string]$Tts,
+        [string]$BackendEnvPath
+    )
+
+    if ($Tts -ine "qwentts" -or -not [string]::IsNullOrWhiteSpace($env:DASHSCOPE_API_KEY)) {
+        return
+    }
+
+    $apiKey = Get-DotEnvValue -Path $BackendEnvPath -Names @(
+        "DASHSCOPE_API_KEY",
+        "BAILIAN_API_KEY",
+        "SPEECH_API_KEY"
+    )
+    if ([string]::IsNullOrWhiteSpace($apiKey)) {
+        throw "QwenTTS requires DASHSCOPE_API_KEY or BAILIAN_API_KEY in backend\.env"
+    }
+
+    # Set the key only in this launcher process.  Child processes inherit it,
+    # while the secret stays out of the command line and startup log.
+    $env:DASHSCOPE_API_KEY = $apiKey
+    Write-Host "Loaded the QwenTTS credential from backend\.env."
+}
+
 function Start-LiveTalkingService {
     param(
         [string]$WorkingDirectory,
         [string]$PythonExecutable,
         [int]$Port,
         [string]$Model,
+        [string]$Tts,
+        [string]$Voice,
         [string]$AvatarId,
         [int]$MaxSession
     )
 
     $liveLog = Join-Path $LogDir "livetalking.log"
-    $liveCommand = "& $(Quote-PS $PythonExecutable) app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
+    $liveCommand = "& $(Quote-PS $PythonExecutable) app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --tts $(Quote-PS $Tts) --REF_FILE $(Quote-PS $Voice) --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
     $liveProcess = Start-ManagedProcess -Name "livetalking" -WorkingDirectory $WorkingDirectory -Command $liveCommand
     return [pscustomobject]@{
         name = "livetalking"
@@ -382,7 +448,8 @@ if (-not $SkipLiveTalking) {
         }
     }
     else {
-        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+        Initialize-LiveTalkingTtsEnvironment -Tts $LiveTalkingTts -BackendEnvPath (Join-Path $BackendPath ".env")
+        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -Tts $LiveTalkingTts -Voice $LiveTalkingVoice -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
     }
 }
 
@@ -399,7 +466,8 @@ if (-not $SkipLiveTalking -and -not $DryRun) {
             if (Stop-StaleLiveTalkingPortOwner -Port $LiveTalkingPort) {
                 Write-Host "Restarting LiveTalking on port $LiveTalkingPort."
                 $services = @($services | Where-Object { $_.name -ne "livetalking" })
-                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+                Initialize-LiveTalkingTtsEnvironment -Tts $LiveTalkingTts -BackendEnvPath (Join-Path $BackendPath ".env")
+                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -Tts $LiveTalkingTts -Voice $LiveTalkingVoice -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
                 $didRestartLiveTalking = $true
                 if (-not (Wait-HttpReady -Name "LiveTalking" -Url $liveTalkingReadyUrl -TimeoutSeconds $LiveTalkingReadyTimeoutSeconds)) {
                     Write-Warning "LiveTalking restarted, but it still did not answer $liveTalkingReadyUrl within $LiveTalkingReadyTimeoutSeconds seconds."

@@ -125,7 +125,6 @@ export function DigitalHumanPanel({
   const pendingAnswerRef = useRef<{ key: string; text: string } | null>(null);
   const autoAttemptedAnswerKeyRef = useRef("");
   const spokenAnswerKeyRef = useRef("");
-  const loadingPromptSentRef = useRef(false);
   const pipDragRef = useRef<PipDragState | null>(null);
   const pipAnchorRef = useRef<PipAnchor | null>(null);
   const suppressPipExpandClickRef = useRef(false);
@@ -258,24 +257,6 @@ export function DigitalHumanPanel({
     };
     void flushPendingAnswer();
   }, [latestAnswer, latestAnswerKey, connectionState, sessionId, isSpeaking]);
-
-  useEffect(() => {
-    if (!isAnswerLoading) {
-      loadingPromptSentRef.current = false;
-      return;
-    }
-    if (
-      loadingPromptSentRef.current ||
-      connectionState !== "connected" ||
-      !sessionId ||
-      isSpeaking
-    ) {
-      return;
-    }
-
-    loadingPromptSentRef.current = true;
-    void speakText("好的，我马上为您讲解。");
-  }, [isAnswerLoading, connectionState, sessionId, isSpeaking]);
 
   async function loadConfigAndConnect(signal?: AbortSignal) {
     try {
@@ -504,7 +485,7 @@ export function DigitalHumanPanel({
           text: text.trim(),
           type: "echo",
           interrupt: true,
-          tts: config.voice ? { voice: config.voice } : undefined,
+          tts: config.voice ? { ref_file: config.voice } : undefined,
         }),
       });
 

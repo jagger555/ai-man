@@ -11224,21 +11224,26 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 5px;
+  align-items: start;
 }
 
-.pip-question-row input {
+.pip-question-row textarea {
   min-width: 0;
-  height: var(--guide-pip-control-size);
+  min-height: var(--guide-pip-control-size);
+  max-height: 96px;
+  resize: none;
+  overflow-y: auto;
   border: 1px solid rgba(47, 118, 100, 0.16);
   border-radius: 10px 4px 10px 4px;
   padding: 6px 8px;
   color: #26483f;
   background: #fff;
   font-size: 10px;
+  line-height: 1.45;
   outline: none;
 }
 
-.pip-question-row input:focus {
+.pip-question-row textarea:focus {
   border-color: rgba(185, 135, 49, 0.58);
   box-shadow: 0 0 0 3px rgba(214, 168, 79, 0.12);
 }

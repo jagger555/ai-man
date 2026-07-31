@@ -128,7 +128,7 @@ export function DigitalHumanPanel({
   const pipDragRef = useRef<PipDragState | null>(null);
   const pipAnchorRef = useRef<PipAnchor | null>(null);
   const suppressPipExpandClickRef = useRef(false);
-  const pipQuestionInputRef = useRef<HTMLInputElement | null>(null);
+  const pipQuestionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const lastPipQuestionOpenRequestRef = useRef(pipQuestionOpenRequest);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
@@ -195,17 +195,24 @@ export function DigitalHumanPanel({
     if (mode !== "pip" || !isPipQuestionOpen) {
       return;
     }
-    const input = pipQuestionInputRef.current;
-    if (!input) {
+    const textarea = pipQuestionInputRef.current;
+    if (!textarea) {
       return;
     }
     requestAnimationFrame(() => {
-      const end = input.value.length;
-      input.focus();
-      input.setSelectionRange(end, end);
-      input.scrollLeft = input.scrollWidth;
+      textarea.focus();
+      autoSizePipQuestionInput();
     });
   }, [mode, isPipQuestionOpen]);
+
+  function autoSizePipQuestionInput() {
+    const textarea = pipQuestionInputRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight + 2, 96)}px`;
+  }
 
   useEffect(() => {
     if (mode !== "pip") {
@@ -818,13 +825,16 @@ export function DigitalHumanPanel({
             <form className="pip-question-sheet" onSubmit={submitPipQuestion}>
               <label htmlFor="pip-guide-question">向数字导游提问</label>
               <div className="pip-question-row">
-                <input
+                <textarea
                   ref={pipQuestionInputRef}
                   id="pip-guide-question"
                   value={question}
-                  onChange={(event) => onQuestionChange?.(event.target.value)}
+                  onChange={(event) => {
+                    onQuestionChange?.(event.target.value);
+                    autoSizePipQuestionInput();
+                  }}
                   placeholder="输入路线或景点问题"
-                  autoComplete="off"
+                  rows={2}
                 />
                 <button
                   type="button"

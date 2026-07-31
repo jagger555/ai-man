@@ -112,6 +112,34 @@ def test_avatar_list_and_select_updates_runtime_config(monkeypatch, tmp_path):
     assert config_response.json()["avatar"] == "626"
 
 
+def test_avatar_voice_follows_qwentts_avatar_mapping(monkeypatch, tmp_path):
+    avatar_dir = tmp_path / "avatars"
+    for avatar_id in ("001", "002", "626"):
+        (avatar_dir / avatar_id).mkdir(parents=True)
+
+    monkeypatch.setenv("DIGITAL_HUMAN_AVATAR_DIR", str(avatar_dir))
+    monkeypatch.setenv("DIGITAL_HUMAN_STATE_PATH", str(tmp_path / "state.json"))
+    monkeypatch.setenv("DIGITAL_HUMAN_VOICE", "Cherry")
+    monkeypatch.setenv("DIGITAL_HUMAN_REF_AUDIO", "Cherry")
+
+    client = TestClient(app)
+    for avatar_id, expected_voice in (
+        ("001", "Serena"),
+        ("002", "Ethan"),
+        ("626", "Cherry"),
+    ):
+        select_response = client.post(
+            "/api/digital-human/avatars/select",
+            json={"avatar_id": avatar_id},
+        )
+
+        assert select_response.status_code == 200
+        config = select_response.json()["config"]
+        assert config["avatar"] == avatar_id
+        assert config["voice"] == expected_voice
+        assert config["ref_audio"] == expected_voice
+
+
 def test_livetalking_root_defaults_to_sibling_directory(monkeypatch):
     monkeypatch.delenv("LIVETALKING_ROOT", raising=False)
 

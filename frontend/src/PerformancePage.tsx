@@ -31,6 +31,8 @@ type PerformanceConfig = {
   highlights: string[];
 };
 
+const EXTENDED_PERFORMANCE_VALID_UNTIL = "2026-08-31T23:59:59+08:00";
+
 const defaultPerformanceItems: PerformanceConfig[] = [
   {
     id: "jiulong",
@@ -43,7 +45,7 @@ const defaultPerformanceItems: PerformanceConfig[] = [
     gallery: [jiulongImage, jiulongGallery1, jiulongGallery2, jiulongGallery3],
     imageAlt: "灵山胜境九龙灌浴景观",
     validFrom: "2026-07-02T00:00:00+08:00",
-    validUntil: "2026-07-31T23:59:59+08:00",
+    validUntil: EXTENDED_PERFORMANCE_VALID_UNTIL,
     schedules: [
       { label: "周一至周五", times: ["10:00", "11:30", "14:45", "16:45"] },
       { label: "周六、周日", times: ["10:00", "11:30", "13:00", "14:45", "16:45"] },
@@ -61,7 +63,7 @@ const defaultPerformanceItems: PerformanceConfig[] = [
     gallery: [fangongImage, fangongGallery1, fangongGallery2, fangongGallery3],
     imageAlt: "灵山梵宫内部穹顶与飞天艺术",
     validFrom: "2026-07-02T00:00:00+08:00",
-    validUntil: "2026-07-31T23:59:59+08:00",
+    validUntil: EXTENDED_PERFORMANCE_VALID_UNTIL,
     schedules: [
       { label: "每日", times: ["10:00", "11:00", "12:00", "13:30", "14:30", "15:30"] },
     ],
@@ -77,6 +79,10 @@ function formatValidPeriod(validFrom: string, validUntil: string) {
     day: "numeric",
   });
   return `${formatter.format(new Date(validFrom))}—${formatter.format(new Date(validUntil))}`;
+}
+
+function normalizePerformanceValidity(validUntil: string) {
+  return validUntil.startsWith("2026-07-31") ? EXTENDED_PERFORMANCE_VALID_UNTIL : validUntil;
 }
 
 function PerformanceGallery({ item }: { item: PerformanceConfig }) {
@@ -159,7 +165,7 @@ export function PerformancePage({
             description: item.description,
             arrivalNotice: item.arrival_notice,
             validFrom: item.valid_from,
-            validUntil: item.valid_until,
+            validUntil: normalizePerformanceValidity(item.valid_until),
             schedules: item.schedules,
           }] : [];
         });

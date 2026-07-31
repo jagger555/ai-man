@@ -212,6 +212,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -L
 
 # 限制数字人并发会话数（默认 2）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingMaxSession 2
+
+# 调整口型推理批量（默认 16；值越小启动延迟越低，但 GPU 调用更频繁）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1 -LiveTalkingBatchSize 16
 ```
 
 停止本次启动的服务：

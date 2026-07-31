@@ -4289,7 +4289,7 @@ textarea {
 
 .main-layout:not(.admin-mode) {
   width: min(1720px, 100%);
-  grid-template-columns: minmax(420px, 0.44fr) minmax(520px, 0.56fr);
+  grid-template-columns: minmax(460px, 0.52fr) minmax(480px, 0.48fr);
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: stretch;
@@ -4564,6 +4564,19 @@ textarea {
 
 .stage-mode .live-stage {
   width: min(100%, 640px);
+}
+
+.stage-mode .live-video {
+  transform: scale(1.18);
+  transform-origin: center center;
+}
+
+.avatar-letterbox-fix .live-video {
+  transform: scale(1.125);
+}
+
+.stage-mode.avatar-letterbox-fix .live-video {
+  transform: scale(1.25);
 }
 
 .stage-mode .digital-human-status {
@@ -4977,6 +4990,10 @@ textarea {
   .digital-human-live-card {
     min-height: 720px;
   }
+
+  .digital-human-live-card.stage-mode {
+    height: clamp(720px, 86vh, 860px);
+  }
 }
 
 @media (max-width: 900px) {
@@ -4998,6 +5015,10 @@ textarea {
 
   .digital-human-live-card {
     min-height: auto;
+  }
+
+  .digital-human-live-card.stage-mode {
+    height: auto;
   }
 
   .digital-human-actions {
@@ -8126,6 +8147,9 @@ textarea {
   --guide-pip-safe-bottom: 18px;
   --guide-pip-snap-distance: 30px;
   --map-planner-width: 368px;
+  --map-floating-left: 18px;
+  --map-floating-top: 18px;
+  --map-facility-width: 428px;
 }
 
 .scenic-guide-page.feature-page-active {
@@ -9179,18 +9203,42 @@ textarea {
   border-bottom: 1px solid rgba(255, 255, 255, 0.13);
 }
 
-.admin-sidebar-brand > span {
+.admin-brand-mark {
+  position: relative;
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
   flex: 0 0 auto;
-  border: 1px solid rgba(228, 195, 122, 0.56);
-  border-radius: 50%;
-  color: #f2d58b;
-  font-family: "Noto Serif SC", "Source Han Serif SC", serif;
-  font-size: 19px;
-  box-shadow: inset 0 0 0 5px rgba(228, 195, 122, 0.08);
+  overflow: hidden;
+  border: 1px solid rgba(231, 198, 124, 0.62);
+  border-radius: 15px 5px 15px 5px;
+  background:
+    radial-gradient(circle at 72% 24%, rgba(244, 207, 119, 0.95) 0 4px, transparent 5px),
+    linear-gradient(145deg, rgba(243, 215, 143, 0.18), rgba(34, 117, 91, 0.18)),
+    #0f4a3d;
+  box-shadow:
+    inset 0 0 0 5px rgba(238, 207, 132, 0.08),
+    0 10px 22px rgba(5, 31, 26, 0.22);
+}
+
+.admin-brand-peak {
+  position: absolute;
+  left: 9px;
+  right: 8px;
+  bottom: 12px;
+  height: 18px;
+  background: linear-gradient(135deg, #f5df9d 0 50%, #d5a84d 50% 100%);
+  clip-path: polygon(0 100%, 30% 36%, 46% 70%, 66% 18%, 100% 100%);
+}
+
+.admin-brand-path {
+  position: absolute;
+  left: 11px;
+  right: 10px;
+  bottom: 8px;
+  height: 7px;
+  border-bottom: 2px solid rgba(250, 236, 190, 0.92);
+  border-radius: 0 0 50% 50%;
+  transform: rotate(-8deg);
 }
 
 .admin-sidebar-brand div {
@@ -10594,6 +10642,12 @@ textarea {
   pointer-events: auto;
 }
 
+.map-feature-content .amap-route-planner.is-open + .amap-map-stage .facility-map-control {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-10px);
+}
+
 .map-feature-content .amap-route-planner.has-route {
   width: min(560px, calc(100vw - 36px));
   grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
@@ -10684,8 +10738,9 @@ textarea {
 .map-planner-open-button {
   position: absolute;
   z-index: 20;
-  top: 18px;
-  left: 148px;
+  top: auto;
+  bottom: 112px;
+  left: var(--map-floating-left);
   min-height: 42px;
   gap: 7px;
   border-radius: 12px 5px 12px 5px;
@@ -10786,8 +10841,25 @@ textarea {
 }
 
 .map-feature-content .facility-map-control {
-  top: 18px;
-  left: 18px;
+  top: var(--map-floating-top);
+  left: var(--map-floating-left);
+  width: min(var(--map-facility-width), calc(100vw - 36px));
+  max-height: min(300px, calc(100vh - 124px));
+  align-content: start;
+  overflow: auto;
+  padding: 11px 12px 12px;
+  scrollbar-width: thin;
+  transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.map-feature-content .facility-map-control > div {
+  margin-bottom: 2px;
+}
+
+.map-feature-content .facility-map-control button {
+  min-height: 34px;
+  padding: 6px 11px;
+  font-size: 12px;
 }
 
 .map-feature-content .map-route-status {
@@ -10808,12 +10880,42 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .map-planner-open-button {
+    bottom: 116px;
+    left: 18px;
+  }
+
+  .map-feature-content .facility-map-control {
+    width: min(430px, calc(100vw - 36px));
+    max-height: min(298px, calc(100vh - 132px));
+  }
+
   .map-feature-content .map-route-status,
   .map-feature-content .map-suggestion-status {
     right: auto;
     left: 18px;
     width: max(220px, calc(100vw - var(--guide-pip-width) - 72px));
     transform: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .map-feature-content .facility-map-control {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 246px;
+  }
+
+  .map-feature-content .facility-map-control button {
+    min-height: 32px;
+    padding-inline: 9px;
+  }
+
+  .map-planner-open-button {
+    bottom: 118px;
+    left: 12px;
+    min-height: 40px;
   }
 }
 
@@ -11070,7 +11172,8 @@ textarea {
   width: 100%;
   min-height: var(--guide-pip-caption-height);
   max-height: var(--guide-pip-caption-height);
-  display: block;
+  display: grid;
+  place-items: center;
   overflow: hidden;
   margin-top: -17px;
   border: 1px solid rgba(255, 255, 255, 0.34);
@@ -11084,52 +11187,17 @@ textarea {
   line-height: 1.5;
   text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
-  cursor: pointer;
+  overflow-wrap: anywhere;
+  white-space: normal;
   backdrop-filter: blur(10px);
 }
 
 .pip-mode .pip-caption-track {
-  display: block;
-}
-
-.pip-mode .pip-caption.is-scrolling {
-  display: flex;
-  align-items: center;
-  padding-right: 0;
-  padding-left: 0;
-  white-space: nowrap;
-}
-
-.pip-mode .pip-caption.is-scrolling .pip-caption-track {
-  width: max-content;
-  display: flex;
-  gap: 36px;
-  align-items: center;
-  animation: pip-caption-marquee 14s linear infinite;
-}
-
-.pip-mode .pip-caption.is-scrolling .pip-caption-track > span {
-  white-space: nowrap;
-}
-
-.pip-mode .pip-caption.is-scrolling:hover .pip-caption-track,
-.pip-mode .pip-caption.is-scrolling:focus-visible .pip-caption-track {
-  animation-play-state: paused;
-}
-
-.pip-mode .pip-caption[aria-expanded="true"] {
-  position: absolute;
-  z-index: 8;
-  right: 0;
-  bottom: 42px;
-  left: auto;
-  width: 320px;
-  max-height: 150px;
-  overflow: auto;
-  color: #fffdf6;
-  background: rgba(13, 57, 47, 0.94);
-  box-shadow: 0 12px 28px rgba(19, 59, 49, 0.18);
-  text-align: left;
+  width: 100%;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .pip-actions {
@@ -11195,15 +11263,6 @@ textarea {
   background: rgba(255, 253, 247, 0.97);
   box-shadow: 0 16px 34px rgba(19, 59, 49, 0.22);
   backdrop-filter: blur(16px);
-}
-
-@keyframes pip-caption-marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(calc(-50% - 18px));
-  }
 }
 
 .pip-question-sheet > label {
@@ -11907,11 +11966,11 @@ textarea {
   min-height: 0;
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 5px;
+  gap: 8px;
   align-items: center;
   border: 1px solid rgba(35, 101, 80, 0.09);
   border-radius: 10px 3px 10px 3px;
-  padding: 3px 5px;
+  padding: 5px 6px;
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -11928,7 +11987,14 @@ textarea {
   font-weight: 900;
 }
 
-.route-stop-list li > span {
+.route-stop-copy {
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  gap: 3px;
+}
+
+.route-stop-copy > strong {
   min-width: 0;
   overflow: hidden;
   color: #2a4b41;
@@ -11938,9 +12004,23 @@ textarea {
   white-space: nowrap;
 }
 
+.route-stop-copy > small {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(54, 82, 72, 0.72);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.32;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+
 .route-stop-actions {
   display: flex;
-  gap: 3px;
+  gap: 4px;
+  justify-content: flex-end;
 }
 
 .route-stop-actions button {
@@ -11998,12 +12078,21 @@ textarea {
   }
 
   .route-stop-list {
-    grid-auto-rows: minmax(25px, 1fr);
+    grid-auto-rows: minmax(40px, 1fr);
   }
 
   .route-stop-list li > i,
   .route-stop-actions button {
     width: 22px;
     height: 22px;
+  }
+
+  .route-stop-copy {
+    gap: 1px;
+  }
+
+  .route-stop-copy > small {
+    font-size: 10px;
+    line-height: 1.22;
   }
 }

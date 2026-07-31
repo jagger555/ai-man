@@ -13,11 +13,27 @@ from fastapi import HTTPException, UploadFile
 from app.core.config import DigitalHumanConfig, get_digital_human_config
 
 
+AVATAR_VOICE_OVERRIDES = {
+    "001": "Serena",
+    "002": "Ethan",
+    "626": "Cherry",
+}
+
+
 def get_effective_digital_human_config() -> DigitalHumanConfig:
     config = get_digital_human_config()
     selected_avatar = _load_state().get("selected_avatar")
     if isinstance(selected_avatar, str) and selected_avatar.strip():
-        return replace(config, avatar=selected_avatar.strip())
+        normalized_avatar = selected_avatar.strip()
+        voice_override = AVATAR_VOICE_OVERRIDES.get(normalized_avatar)
+        if voice_override:
+            return replace(
+                config,
+                avatar=normalized_avatar,
+                voice=voice_override,
+                ref_audio=voice_override,
+            )
+        return replace(config, avatar=normalized_avatar)
     return config
 
 

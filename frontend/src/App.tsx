@@ -56,7 +56,7 @@ import { ScenicMapPanel } from "./ScenicMapPanel";
 import { ScenicStatusHeader } from "./ScenicStatusHeader";
 import { PanoramaExperience } from "./PanoramaExperience";
 import { PerformancePage } from "./PerformancePage";
-import { VisitorServicesPage } from "./VisitorServicesPage";
+import { VisitorServicesPage, type VisitorServiceConsultContext } from "./VisitorServicesPage";
 import { AdminCrowdPanel } from "./AdminCrowdPanel";
 import { ScenicContentManager } from "./ScenicContentManager";
 import {
@@ -163,7 +163,7 @@ function getVisitorPageFromLocation(): VisitorPage {
 }
 
 const performanceScheduleNotice = {
-  validPeriod: "2026/7/2 至 2026/7/31",
+  validPeriod: "2026/7/2 至 2026/8/31",
   source: "以景区当日公告为准",
   items: [
     {
@@ -1054,7 +1054,7 @@ export function App() {
 
   async function askQuestion(
     nextQuestion: string,
-    options: { syncInput?: boolean } = {},
+    options: { syncInput?: boolean; currentLocation?: string } = {},
   ) {
     const trimmedQuestion = nextQuestion.trim();
     if (!trimmedQuestion) {
@@ -1087,7 +1087,7 @@ export function App() {
         body: JSON.stringify({
           session_id: sessionId,
           question: trimmedQuestion,
-          current_location: "",
+          current_location: options.currentLocation ?? "",
           visitor_type: "",
           available_time: "",
           route_context: activeRouteContext,
@@ -1182,16 +1182,38 @@ export function App() {
     navigateToVisitorPage("map");
   }
 
-  function consultVisitorService(title: string) {
+  function consultVisitorService(context: VisitorServiceConsultContext) {
+    const { categoryTitle, closestFacility, currentLocation, facilityCount } = context;
+    const nearestDetail = closestFacility
+      ? `最近的${categoryTitle}服务点是“${closestFacility.title}”，坐标为 ${closestFacility.lat.toFixed(6)}, ${closestFacility.lng.toFixed(6)}，距离当前坐标约 ${closestFacility.distance} 米。`
+      : `当前没有可用的${categoryTitle}服务点位数据。`;
+    const nextQuestion = [
+      `我现在的位置参考为“${currentLocation.label}”，坐标是 ${currentLocation.lat.toFixed(6)}, ${currentLocation.lng.toFixed(6)}。`,
+      `我想找景区内的${categoryTitle}服务。该类别当前共有 ${facilityCount} 个点位。`,
+      nearestDetail,
+      "请优先推荐离我最近的服务点，说明大致怎么走、适合什么时候过去，以及现场需要注意什么。如果定位只是景区中心参考坐标，请明确说明这是参考推荐。",
+    ].join("\n");
     trackVisitorEvent({
       eventType: "service_category",
       page: "services",
       entityType: "service",
-      entityId: title,
-      metadata: { category: title, action: "consult" },
+      entityId: categoryTitle,
+      metadata: {
+        category: categoryTitle,
+        action: "consult",
+        currentLat: currentLocation.lat,
+        currentLng: currentLocation.lng,
+        currentSource: currentLocation.source,
+        nearestFacility: closestFacility?.title ?? "",
+        nearestDistanceMeters: closestFacility?.distance ?? -1,
+      },
     });
-    setQuestion(`请告诉我如何查找景区内的${title}服务，具体位置以现场标识为准。`);
-    setPipQuestionOpenRequest((request) => request + 1);
+    if (closestFacility) {
+      setMapDestination(closestFacility.title);
+    }
+    void askQuestion(nextQuestion, {
+      currentLocation: `${currentLocation.label}: ${currentLocation.lat.toFixed(6)}, ${currentLocation.lng.toFixed(6)}`,
+    });
   }
 
   async function submitFeedback(rating: FeedbackRating) {
@@ -1807,11 +1829,14 @@ export function App() {
               </header>
 
               <nav className="admin-tabs" aria-label="管理后台模块">
-                <div className="admin-sidebar-brand" aria-label="灵境导游管理平台">
-                  <span aria-hidden="true">灵</span>
+                <div className="admin-sidebar-brand" aria-label="灵山智导运营中台">
+                  <span className="admin-brand-mark" aria-hidden="true">
+                    <span className="admin-brand-peak" />
+                    <span className="admin-brand-path" />
+                  </span>
                   <div>
-                    <strong>灵境导游</strong>
-                    <small>管理平台</small>
+                    <strong>灵山智导</strong>
+                    <small>运营中台</small>
                   </div>
                 </div>
                 {adminSections.map((section) => {

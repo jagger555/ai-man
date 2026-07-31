@@ -302,6 +302,28 @@ const SCENIC_MAP_LANDMARKS = SCENIC_MAP_LANDMARK_IDS.map(
   (id) => LOCAL_NAVIGATION_SUGGESTIONS.find((tip) => tip.id === id),
 ).filter((tip): tip is AMapTip => Boolean(tip?.name));
 
+const routeStopNoteRules: Array<{ keywords: string[]; note: string }> = [
+  { keywords: ["检票", "入口"], note: "从入口进入园区，确认路线与讲解节奏。" },
+  { keywords: ["佛足"], note: "中轴起点景观，适合短暂停留拍照。" },
+  { keywords: ["九龙", "灌浴"], note: "核心动态景观，可结合演出时间停留。" },
+  { keywords: ["佛手", "天下第一掌"], note: "标志性互动点，距离大佛核心区较近。" },
+  { keywords: ["祥符禅寺"], note: "礼佛参观节点，游览节奏建议放慢。" },
+  { keywords: ["大佛"], note: "路线核心景点，预留登高与观景时间。" },
+  { keywords: ["梵宫"], note: "室内艺术与演艺空间，适合避开日晒。" },
+  { keywords: ["五印坛城"], note: "藏式建筑群，可与梵宫连线游览。" },
+  { keywords: ["曼飞龙塔"], note: "外观打卡点，适合作为路线转场。" },
+  { keywords: ["降魔浮雕"], note: "沿线文化景观，适合快速浏览。" },
+  { keywords: ["百子戏弥勒"], note: "轻松拍照点，亲子游客可多停留。" },
+  { keywords: ["涅槃堂"], note: "室内参观节点，注意开放时间。" },
+  { keywords: ["平台"], note: "登高观景位置，适合回望景区轴线。" },
+  { keywords: ["出口"], note: "结束游览，可衔接返程或服务点。" },
+];
+
+function getRouteStopNote(stop: string) {
+  return routeStopNoteRules.find((rule) => rule.keywords.some((keyword) => stop.includes(keyword)))?.note
+    ?? "按当前游线继续前进，保持从容游览节奏。";
+}
+
 const scenicRoutes: ScenicRoute[] = [
   {
     id: "classic",
@@ -1820,7 +1842,10 @@ function RouteGuideView({
           {activeRoute.stops.map((stop, index) => (
             <li key={stop}>
               <i>{String(index + 1).padStart(2, "0")}</i>
-              <span>{stop}</span>
+              <span className="route-stop-copy">
+                <strong>{stop}</strong>
+                <small>{getRouteStopNote(stop)}</small>
+              </span>
               <div className="route-stop-actions">
                 <button
                   type="button"

@@ -36,6 +36,31 @@ type Facility = {
   enabled: boolean;
 };
 
+type VisitorLocation = {
+  label: string;
+  lat: number;
+  lng: number;
+  source: "browser" | "scenic_center";
+};
+
+type FacilityWithDistance = Facility & {
+  distance: number;
+};
+
+export type VisitorServiceConsultContext = {
+  categoryTitle: string;
+  currentLocation: VisitorLocation;
+  closestFacility: FacilityWithDistance | null;
+  facilityCount: number;
+};
+
+const SCENIC_REFERENCE_LOCATION: VisitorLocation = {
+  label: "景区中心参考坐标",
+  lat: 31.4253,
+  lng: 120.0914,
+  source: "scenic_center",
+};
+
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
   卫生间: Toilet,
   景点: Landmark,
@@ -68,14 +93,13 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   观光车站: "查看观光车站点位置，具体运营安排以现场为准。",
 };
 
-function distanceInMeters(lat: number, lng: number) {
-  const center = { lat: 31.4253, lng: 120.0914 };
+function distanceInMeters(from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
   const radius = 6371000;
   const toRadians = (value: number) => (value * Math.PI) / 180;
-  const latDelta = toRadians(lat - center.lat);
-  const lngDelta = toRadians(lng - center.lng);
+  const latDelta = toRadians(to.lat - from.lat);
+  const lngDelta = toRadians(to.lng - from.lng);
   const arc = Math.sin(latDelta / 2) ** 2
-    + Math.cos(toRadians(center.lat)) * Math.cos(toRadians(lat)) * Math.sin(lngDelta / 2) ** 2;
+    + Math.cos(toRadians(from.lat)) * Math.cos(toRadians(to.lat)) * Math.sin(lngDelta / 2) ** 2;
   return Math.round(radius * 2 * Math.atan2(Math.sqrt(arc), Math.sqrt(1 - arc)));
 }
 
@@ -88,11 +112,28 @@ export function VisitorServicesPage({
   onConsult,
 }: {
   onFindNearest: (searchTerm: string) => void;
-  onConsult: (title: string) => void;
+  onConsult: (context: VisitorServiceConsultContext) => void;
 }) {
   const [categories, setCategories] = useState<FacilityCategory[]>([]);
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<VisitorLocation>(SCENIC_REFERENCE_LOCATION);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCurrentLocation({
+          label: "浏览器定位坐标",
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          source: "browser",
+        });
+      },
+      () => undefined,
+      { enableHighAccuracy: true, maximumAge: 120000, timeout: 5000 },
+    );
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -112,10 +153,13 @@ export function VisitorServicesPage({
   const cards = useMemo(() => categories.map((category) => {
     const locations = facilities
       .filter((facility) => facility.category_id === category.id)
-      .map((facility) => ({ ...facility, distance: distanceInMeters(facility.lat, facility.lng) }))
+      .map((facility) => ({
+        ...facility,
+        distance: distanceInMeters(currentLocation, { lat: facility.lat, lng: facility.lng }),
+      }))
       .sort((left, right) => left.distance - right.distance);
     return { category, locations, closest: locations[0] ?? null };
-  }), [categories, facilities]);
+  }), [categories, currentLocation, facilities]);
 
   return (
     <section className="visitor-services-page" aria-label="灵山胜境游客服务">
@@ -146,7 +190,15 @@ export function VisitorServicesPage({
                   <button type="button" onClick={() => onFindNearest(category.title)} disabled={locations.length === 0}>
                     <LocateFixed size={15} aria-hidden="true" /> 地图查看
                   </button>
-                  <button type="button" onClick={() => onConsult(category.title)}>
+                  <button
+                    type="button"
+                    onClick={() => onConsult({
+                      categoryTitle: category.title,
+                      currentLocation,
+                      closestFacility: closest,
+                      facilityCount: locations.length,
+                    })}
+                  >
                     <MessageCircleQuestion size={15} aria-hidden="true" /> 咨询数字人
                   </button>
                 </div>

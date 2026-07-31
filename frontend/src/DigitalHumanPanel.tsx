@@ -115,7 +115,6 @@ export function DigitalHumanPanel({
 }: DigitalHumanPanelProps) {
   const panelRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const configRef = useRef<DigitalHumanConfig | null>(null);
   const sessionIdRef = useRef("");
@@ -130,15 +129,18 @@ export function DigitalHumanPanel({
   const suppressPipExpandClickRef = useRef(false);
   const pipQuestionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const lastPipQuestionOpenRequestRef = useRef(pipQuestionOpenRequest);
+  const hasObservedSpeakingRef = useRef(false);
   const [config, setConfig] = useState<DigitalHumanConfig | null>(null);
   const [sessionId, setSessionId] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [statusMessage, setStatusMessage] = useState("等待连接 LiveTalking 服务");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeakingTracking, setIsSpeakingTracking] = useState(false);
+  const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
+  const [activeCaption, setActiveCaption] = useState("");
   const [isAudioBlocked, setIsAudioBlocked] = useState(false);
   const [isPipCollapsed, setIsPipCollapsed] = useState(false);
   const [isPipQuestionOpen, setIsPipQuestionOpen] = useState(false);
-  const [isCaptionExpanded, setIsCaptionExpanded] = useState(false);
   const [isPipDragging, setIsPipDragging] = useState(false);
   const [pipPosition, setPipPosition] = useState<PipPosition | null>(null);
   const [pipAnchor, setPipAnchor] = useState<PipAnchor | null>(null);
@@ -148,6 +150,7 @@ export function DigitalHumanPanel({
 
   const canSpeak =
     connectionState === "connected" && sessionId.length > 0 && latestAnswer.trim().length > 0;
+  const isPlaybackActive = isSpeaking || isSpeakingTracking;
   const stageStateLabel = isAnswerLoading
     ? "正在讲解"
     : connectionState === "connected"
@@ -264,6 +267,70 @@ export function DigitalHumanPanel({
   }, [mode]);
 
   useEffect(() => {
+    if (!isSpeakingTracking || !config?.base_url || !sessionId) {
+      return;
+    }
+
+    let cancelled = false;
+    let timerId = 0;
+    const trackingStartedAt = Date.now();
+
+    const stopTracking = (message = "数字人已就绪") => {
+      setIsAvatarSpeaking(false);
+      setActiveCaption("");
+      setIsSpeakingTracking(false);
+      setStatusMessage(message);
+    };
+
+    const pollSpeakingState = async () => {
+      try {
+        const response = await fetch(`${config.base_url}/speaking_state`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionid: sessionId }),
+        });
+        if (response.ok) {
+          const payload = (await response.json()) as {
+            code?: number;
+            data?: { speaking?: boolean; text?: string };
+          };
+          const speaking = payload.code === 0 && payload.data?.speaking === true;
+          if (speaking) {
+            hasObservedSpeakingRef.current = true;
+            setIsAvatarSpeaking(true);
+            setActiveCaption(payload.data?.text?.trim() ?? "");
+          } else if (hasObservedSpeakingRef.current) {
+            stopTracking();
+            return;
+          }
+        }
+      } catch {
+        // Speaking-state polling is optional; media playback continues without it.
+      }
+
+      if (cancelled) {
+        return;
+      }
+      const elapsed = Date.now() - trackingStartedAt;
+      if (!hasObservedSpeakingRef.current && elapsed > 12000) {
+        stopTracking("未检测到数字人播报");
+        return;
+      }
+      if (elapsed > 120000) {
+        stopTracking();
+        return;
+      }
+      timerId = window.setTimeout(pollSpeakingState, 120);
+    };
+
+    void pollSpeakingState();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [config?.base_url, isSpeakingTracking, sessionId]);
+
+  useEffect(() => {
     const trimmedAnswer = latestAnswer.trim();
     if (!trimmedAnswer || !latestAnswerKey) {
       return;
@@ -280,7 +347,7 @@ export function DigitalHumanPanel({
       text: trimmedAnswer,
     };
     void flushPendingAnswer();
-  }, [latestAnswer, latestAnswerKey, connectionState, sessionId, isSpeaking]);
+  }, [latestAnswer, latestAnswerKey, connectionState, sessionId, isPlaybackActive]);
 
   async function loadConfigAndConnect(signal?: AbortSignal) {
     try {
@@ -358,15 +425,22 @@ export function DigitalHumanPanel({
       peerConnection.addTransceiver("audio", { direction: "recvonly" });
       peerConnection.addEventListener("track", (event) => {
         const [stream] = event.streams;
-        if (!stream) {
+        const mediaElement = videoRef.current;
+        if (!stream || !mediaElement) {
           return;
         }
-        if (event.track.kind === "video" && videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (mediaElement.srcObject !== stream) {
+          mediaElement.muted = true;
+          mediaElement.srcObject = stream;
+          void mediaElement.play().catch(() => undefined);
         }
-        if (event.track.kind === "audio" && audioRef.current) {
-          audioRef.current.srcObject = stream;
-          void audioRef.current.play().catch(() => {
+        if (event.track.kind === "audio") {
+          mediaElement.muted = false;
+          void mediaElement.play().then(() => {
+            setIsAudioBlocked(false);
+          }).catch(() => {
+            mediaElement.muted = true;
+            void mediaElement.play().catch(() => undefined);
             setIsAudioBlocked(true);
           });
         }
@@ -478,7 +552,7 @@ export function DigitalHumanPanel({
       spokenAnswerKeyRef.current === pendingAnswer.key ||
       connectionState !== "connected" ||
       !sessionId ||
-      isSpeaking
+      isPlaybackActive
     ) {
       return;
     }
@@ -492,11 +566,15 @@ export function DigitalHumanPanel({
   }
 
   async function speakText(text: string) {
-    if (!config || !sessionId || !text.trim() || isSpeaking) {
+    if (!config || !sessionId || !text.trim() || isPlaybackActive) {
       return false;
     }
 
     setIsSpeaking(true);
+    setIsAvatarSpeaking(false);
+    setActiveCaption("");
+    setIsSpeakingTracking(false);
+    hasObservedSpeakingRef.current = false;
     setStatusMessage("正在把回答发送给数字人播报...");
     try {
       const response = await fetch(`${config.base_url}/human`, {
@@ -520,6 +598,7 @@ export function DigitalHumanPanel({
       if (payload.code !== 0) {
         throw new Error(payload.msg || "LiveTalking 拒绝播报请求");
       }
+      setIsSpeakingTracking(true);
       setStatusMessage("数字人正在播报当前回答");
       return true;
     } catch (caught) {
@@ -542,6 +621,10 @@ export function DigitalHumanPanel({
         },
         body: JSON.stringify({ sessionid: sessionId }),
       });
+      hasObservedSpeakingRef.current = false;
+      setIsAvatarSpeaking(false);
+      setActiveCaption("");
+      setIsSpeakingTracking(false);
       setStatusMessage("已请求打断数字人播报");
     } catch {
       setStatusMessage("打断播报请求失败");
@@ -591,21 +674,26 @@ export function DigitalHumanPanel({
 
   function cleanupMediaElements() {
     if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.muted = true;
       videoRef.current.srcObject = null;
     }
-    if (audioRef.current) {
-      audioRef.current.srcObject = null;
-    }
+    hasObservedSpeakingRef.current = false;
+    setIsAvatarSpeaking(false);
+    setActiveCaption("");
+    setIsSpeakingTracking(false);
   }
 
   async function enableAudio() {
-    if (!audioRef.current) {
+    if (!videoRef.current) {
       return;
     }
     try {
-      await audioRef.current.play();
+      videoRef.current.muted = false;
+      await videoRef.current.play();
       setIsAudioBlocked(false);
     } catch {
+      videoRef.current.muted = true;
       setStatusMessage("浏览器仍然阻止自动播放声音，请检查站点声音权限");
     }
   }
@@ -727,16 +815,16 @@ export function DigitalHumanPanel({
         }
       : undefined;
 
-  const fullCaption = latestAnswer.trim();
-  const shouldScrollCaption = fullCaption.length > 22 && !isCaptionExpanded;
-  const captionScrollDuration = Math.min(60, Math.max(24, Math.ceil(fullCaption.length / 2.2)));
+  const fullCaption = activeCaption.trim();
 
   return (
     <section
       ref={panelRef}
       className={`digital-human-live-card ${mode === "pip" ? "pip-mode" : "stage-mode"}${
         isPipCollapsed ? " is-collapsed" : ""
-      }${isPipDragging ? " is-dragging" : ""}${isPipQuestionOpen ? " is-question-open" : ""}`}
+      }${isPipDragging ? " is-dragging" : ""}${isPipQuestionOpen ? " is-question-open" : ""}${
+        config?.avatar === "001" ? " avatar-letterbox-fix" : ""
+      }`}
       style={pipStyle}
       aria-label={mode === "pip" ? "数字人画中画" : "LiveTalking 数字人"}
       onPointerDown={beginPipDrag}
@@ -763,8 +851,7 @@ export function DigitalHumanPanel({
       <ScenicStageFrame>
         <LotusWatermark />
         <div className="live-stage">
-          <video ref={videoRef} autoPlay playsInline muted className="live-video" />
-          <audio ref={audioRef} autoPlay />
+          <video ref={videoRef} autoPlay playsInline className="live-video" />
           {connectionState !== "connected" ? (
             <div className="live-placeholder">
               <div className="standby-frame" aria-hidden="true">
@@ -787,25 +874,9 @@ export function DigitalHumanPanel({
           ) : null}
         </div>
       </ScenicStageFrame>
-      {mode === "pip" && fullCaption ? (
-        <button
-          type="button"
-          className={`stage-caption pip-caption${shouldScrollCaption ? " is-scrolling" : ""}`}
-          aria-expanded={isCaptionExpanded}
-          title={isCaptionExpanded ? "收起完整字幕" : "展开完整字幕"}
-          onClick={() => setIsCaptionExpanded((expanded) => !expanded)}
-        >
-          <span
-            className="pip-caption-track"
-            style={shouldScrollCaption ? { animationDuration: `${captionScrollDuration}s` } : undefined}
-          >
-            <span>{fullCaption}</span>
-            {shouldScrollCaption ? <span aria-hidden="true">{fullCaption}</span> : null}
-          </span>
-        </button>
-      ) : mode === "stage" && fullCaption ? (
-        <p className="stage-caption">
-          {fullCaption.length > 58 ? `${fullCaption.slice(0, 58)}...` : fullCaption}
+      {mode === "pip" && fullCaption && isAvatarSpeaking ? (
+        <p className="stage-caption pip-caption">
+          <span className="pip-caption-track">{fullCaption}</span>
         </p>
       ) : null}
 
@@ -886,7 +957,7 @@ export function DigitalHumanPanel({
               aria-label="播放最近回答"
               title="播放回答"
               onClick={() => void speakLatestAnswer()}
-              disabled={!canSpeak || isSpeaking}
+              disabled={!canSpeak || isPlaybackActive}
             >
               <Play size={17} aria-hidden="true" />
             </button>
@@ -927,10 +998,10 @@ export function DigitalHumanPanel({
             type="button"
             className="primary-action"
             onClick={() => void speakLatestAnswer()}
-            disabled={!canSpeak || isSpeaking}
+            disabled={!canSpeak || isPlaybackActive}
           >
             <Volume2 size={16} aria-hidden="true" />
-            {isSpeaking ? "发送中..." : "播报回答"}
+            {isPlaybackActive ? "播报中..." : "播报回答"}
           </button>
           {isAudioBlocked ? (
             <button

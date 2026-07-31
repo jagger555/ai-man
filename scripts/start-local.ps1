@@ -11,6 +11,7 @@ param(
     [string]$LiveTalkingTts = "qwentts",
     [string]$LiveTalkingVoice = "Cherry",
     [string]$LiveTalkingAvatarId = "626",
+    [int]$LiveTalkingBatchSize = 16,
     [int]$LiveTalkingMaxSession = 2,
     [int]$LiveTalkingReadyTimeoutSeconds = 90,
     [switch]$SkipLiveTalking,
@@ -278,11 +279,12 @@ function Start-LiveTalkingService {
         [string]$Tts,
         [string]$Voice,
         [string]$AvatarId,
+        [int]$BatchSize,
         [int]$MaxSession
     )
 
     $liveLog = Join-Path $LogDir "livetalking.log"
-    $liveCommand = "& $(Quote-PS $PythonExecutable) app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --tts $(Quote-PS $Tts) --REF_FILE $(Quote-PS $Voice) --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
+    $liveCommand = "& $(Quote-PS $PythonExecutable) app.py --transport webrtc --model $(Quote-PS $Model) --avatar_id $(Quote-PS $AvatarId) --tts $(Quote-PS $Tts) --REF_FILE $(Quote-PS $Voice) --batch_size $BatchSize --listenport $Port --max_session $MaxSession 2>&1 | Tee-Object -FilePath $(Quote-PS $liveLog) -Append"
     $liveProcess = Start-ManagedProcess -Name "livetalking" -WorkingDirectory $WorkingDirectory -Command $liveCommand
     return [pscustomobject]@{
         name = "livetalking"
@@ -449,7 +451,7 @@ if (-not $SkipLiveTalking) {
     }
     else {
         Initialize-LiveTalkingTtsEnvironment -Tts $LiveTalkingTts -BackendEnvPath (Join-Path $BackendPath ".env")
-        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -Tts $LiveTalkingTts -Voice $LiveTalkingVoice -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+        $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -Tts $LiveTalkingTts -Voice $LiveTalkingVoice -AvatarId $LiveTalkingAvatarId -BatchSize $LiveTalkingBatchSize -MaxSession $LiveTalkingMaxSession
     }
 }
 
@@ -467,7 +469,7 @@ if (-not $SkipLiveTalking -and -not $DryRun) {
                 Write-Host "Restarting LiveTalking on port $LiveTalkingPort."
                 $services = @($services | Where-Object { $_.name -ne "livetalking" })
                 Initialize-LiveTalkingTtsEnvironment -Tts $LiveTalkingTts -BackendEnvPath (Join-Path $BackendPath ".env")
-                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -Tts $LiveTalkingTts -Voice $LiveTalkingVoice -AvatarId $LiveTalkingAvatarId -MaxSession $LiveTalkingMaxSession
+                $services += Start-LiveTalkingService -WorkingDirectory $LiveTalkingPath -PythonExecutable $LiveTalkingPython -Port $LiveTalkingPort -Model $LiveTalkingModel -Tts $LiveTalkingTts -Voice $LiveTalkingVoice -AvatarId $LiveTalkingAvatarId -BatchSize $LiveTalkingBatchSize -MaxSession $LiveTalkingMaxSession
                 $didRestartLiveTalking = $true
                 if (-not (Wait-HttpReady -Name "LiveTalking" -Url $liveTalkingReadyUrl -TimeoutSeconds $LiveTalkingReadyTimeoutSeconds)) {
                     Write-Warning "LiveTalking restarted, but it still did not answer $liveTalkingReadyUrl within $LiveTalkingReadyTimeoutSeconds seconds."

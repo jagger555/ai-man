@@ -372,7 +372,8 @@ const scenicRoutes: ScenicRoute[] = [
 function buildNarration(route: ScenicRoute) {
   return [
     `为您推荐${route.name}。`,
-    `游览顺序是：${route.stops.join("、")}。`,
+    `${route.summary}`,
+    `预计用时${route.duration}，适合${route.audience}，游览节奏${route.pace}。`,
     `讲解重点：${route.notes.join("；")}。`,
     "您可以结合景区图确认大致方位，具体点到点导航可在地图导航页输入起点和终点规划。",
   ].join("");
@@ -598,6 +599,7 @@ export function ScenicMapPanel({
   onRouteContextChange?: (context: {
     routeId: string;
     routeName: string;
+    summary: string;
     duration: string;
     audience: string;
     pace: string;
@@ -834,6 +836,7 @@ export function ScenicMapPanel({
     onRouteContextChange?.({
       routeId: activeRoute.id,
       routeName: activeRoute.name,
+      summary: activeRoute.summary,
       duration: activeRoute.duration,
       audience: activeRoute.audience,
       pace: activeRoute.pace,

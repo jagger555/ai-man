@@ -1686,10 +1686,11 @@ export function App() {
                       onRouteContextChange={(context) => {
                         const routeText = [
                           `当前路线：${context.routeName}`,
+                          `路线概况：${context.summary}`,
                           `预计用时：${context.duration}`,
                           `推荐人群：${context.audience}`,
                           `游览节奏：${context.pace}`,
-                          `景点顺序：${context.stops.join(" → ")}`,
+                          `沿途景点：${context.stops.join("、")}`,
                         ].join("；");
                         const preferenceText = [
                           context.preferences.companion ? `同行：${context.preferences.companion}` : "",

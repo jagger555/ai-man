@@ -2601,38 +2601,6 @@ textarea {
   background: transparent;
 }
 
-.transparent-live-canvas {
-  display: none;
-  position: relative;
-  z-index: 3;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-}
-
-.live-stage.is-transparent-ready {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-
-.live-stage.is-transparent-ready::before,
-.live-stage.is-transparent-ready::after {
-  display: none;
-}
-
-.live-stage.is-transparent-ready .transparent-live-canvas {
-  display: block;
-}
-
-.live-stage.is-transparent-ready .live-video {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .emoji-picker-wrap {
   position: relative;
 }

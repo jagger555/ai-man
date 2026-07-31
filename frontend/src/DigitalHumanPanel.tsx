@@ -11,7 +11,6 @@ import {
   Send,
   Volume2,
 } from "lucide-react";
-import type { ImageSegmenter as MediaPipeImageSegmenter } from "@mediapipe/tasks-vision";
 import type { DigitalHumanConfig } from "./types";
 
 type ConnectionState = "idle" | "connecting" | "connected" | "error";
@@ -53,7 +52,6 @@ type PipDragState = {
 
 const ICE_GATHERING_TIMEOUT_MS = 15000;
 const LIVETALKING_OFFER_TIMEOUT_MS = 15000;
-const SEGMENTATION_WIDTH = 512;
 
 const connectionStateLabels: Record<ConnectionState, string> = {
   idle: "待连接",
@@ -118,14 +116,6 @@ export function DigitalHumanPanel({
   const panelRef = useRef<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const transparentCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const segmentationCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const maskImageDataRef = useRef<ImageData | null>(null);
-  const segmenterRef = useRef<MediaPipeImageSegmenter | null>(null);
-  const segmenterInitPromiseRef = useRef<Promise<boolean> | null>(null);
-  const transparentFrameIdRef = useRef(0);
-  const transparentEnabledRef = useRef(false);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const configRef = useRef<DigitalHumanConfig | null>(null);
   const sessionIdRef = useRef("");
@@ -149,7 +139,6 @@ export function DigitalHumanPanel({
   const [isPipCollapsed, setIsPipCollapsed] = useState(false);
   const [isPipQuestionOpen, setIsPipQuestionOpen] = useState(false);
   const [isCaptionExpanded, setIsCaptionExpanded] = useState(false);
-  const [isTransparentReady, setIsTransparentReady] = useState(false);
   const [isPipDragging, setIsPipDragging] = useState(false);
   const [pipPosition, setPipPosition] = useState<PipPosition | null>(null);
   const [pipAnchor, setPipAnchor] = useState<PipAnchor | null>(null);
@@ -374,7 +363,6 @@ export function DigitalHumanPanel({
         }
         if (event.track.kind === "video" && videoRef.current) {
           videoRef.current.srcObject = stream;
-          void enableTransparentBackground();
         }
         if (event.track.kind === "audio" && audioRef.current) {
           audioRef.current.srcObject = stream;
@@ -608,7 +596,6 @@ export function DigitalHumanPanel({
     if (audioRef.current) {
       audioRef.current.srcObject = null;
     }
-    resetTransparentBackground();
   }
 
   async function enableAudio() {
@@ -621,199 +608,6 @@ export function DigitalHumanPanel({
     } catch {
       setStatusMessage("浏览器仍然阻止自动播放声音，请检查站点声音权限");
     }
-  }
-
-  function drawVideoContain(
-    ctx: CanvasRenderingContext2D,
-    video: HTMLVideoElement,
-    targetWidth: number,
-    targetHeight: number,
-    videoWidth: number,
-    videoHeight: number,
-  ) {
-    const scale = Math.min(targetWidth / videoWidth, targetHeight / videoHeight);
-    const drawWidth = videoWidth * scale;
-    const drawHeight = videoHeight * scale;
-    ctx.drawImage(
-      video,
-      (targetWidth - drawWidth) / 2,
-      (targetHeight - drawHeight) / 2,
-      drawWidth,
-      drawHeight,
-    );
-  }
-
-  async function initTransparentSegmenter(): Promise<boolean> {
-    if (segmenterRef.current) {
-      return true;
-    }
-    if (segmenterInitPromiseRef.current) {
-      return segmenterInitPromiseRef.current;
-    }
-    segmenterInitPromiseRef.current = (async () => {
-      try {
-        const { FilesetResolver, ImageSegmenter } = await import("@mediapipe/tasks-vision");
-        const vision = await FilesetResolver.forVisionTasks("/models/wasm");
-        const baseOptions = {
-          modelAssetPath: "/models/selfie_segmenter.tflite",
-        };
-        let segmenter: MediaPipeImageSegmenter;
-        try {
-          segmenter = await ImageSegmenter.createFromOptions(vision, {
-            baseOptions: { ...baseOptions, delegate: "GPU" },
-            runningMode: "VIDEO",
-            outputCategoryMask: true,
-            outputConfidenceMasks: false,
-          });
-        } catch {
-          segmenter = await ImageSegmenter.createFromOptions(vision, {
-            baseOptions: { ...baseOptions, delegate: "CPU" },
-            runningMode: "VIDEO",
-            outputCategoryMask: true,
-            outputConfidenceMasks: false,
-          });
-        }
-        segmenterRef.current = segmenter;
-        return true;
-      } catch {
-        segmenterRef.current = null;
-        return false;
-      }
-    })();
-    return segmenterInitPromiseRef.current;
-  }
-
-  async function enableTransparentBackground() {
-    if (transparentEnabledRef.current || segmenterRef.current) {
-      return;
-    }
-    transparentEnabledRef.current = true;
-    const ready = await initTransparentSegmenter();
-    if (!ready || !isMountedRef.current) {
-      transparentEnabledRef.current = false;
-      return;
-    }
-    setIsTransparentReady(true);
-    startTransparentRender();
-  }
-
-  function startTransparentRender() {
-    if (transparentFrameIdRef.current) {
-      return;
-    }
-    const loop = () => {
-      transparentFrameIdRef.current = requestAnimationFrame(loop);
-      const video = videoRef.current;
-      const canvas = transparentCanvasRef.current;
-      const segmenter = segmenterRef.current;
-      if (
-        !video ||
-        !canvas ||
-        !segmenter ||
-        video.readyState < 2 ||
-        video.videoWidth <= 0 ||
-        video.videoHeight <= 0
-      ) {
-        return;
-      }
-      const videoWidth = video.videoWidth;
-      const videoHeight = video.videoHeight;
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        return;
-      }
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const targetWidth = Math.max(1, Math.round(rect.width * dpr));
-      const targetHeight = Math.max(1, Math.round(rect.height * dpr));
-      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-      }
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-      ctx.clearRect(0, 0, targetWidth, targetHeight);
-      drawVideoContain(ctx, video, targetWidth, targetHeight, videoWidth, videoHeight);
-
-      const segmentWidth = SEGMENTATION_WIDTH;
-      const segmentHeight = Math.max(1, Math.round((segmentWidth * videoHeight) / videoWidth));
-      const segmentationCanvas =
-        segmentationCanvasRef.current ?? document.createElement("canvas");
-      if (segmentationCanvas.width !== segmentWidth || segmentationCanvas.height !== segmentHeight) {
-        segmentationCanvas.width = segmentWidth;
-        segmentationCanvas.height = segmentHeight;
-      }
-      segmentationCanvasRef.current = segmentationCanvas;
-      const segmentationCtx = segmentationCanvas.getContext("2d", {
-        willReadFrequently: true,
-      });
-      if (!segmentationCtx) {
-        return;
-      }
-      segmentationCtx.drawImage(video, 0, 0, segmentWidth, segmentHeight);
-
-      let results;
-      try {
-        results = segmenter.segmentForVideo(segmentationCanvas, performance.now());
-      } catch {
-        return;
-      }
-      const categoryMask = results.categoryMask;
-      if (!categoryMask) {
-        results.close();
-        return;
-      }
-      const maskValues = categoryMask.getAsFloat32Array();
-      const maskCanvas = maskCanvasRef.current ?? document.createElement("canvas");
-      if (maskCanvas.width !== segmentWidth || maskCanvas.height !== segmentHeight) {
-        maskCanvas.width = segmentWidth;
-        maskCanvas.height = segmentHeight;
-      }
-      maskCanvasRef.current = maskCanvas;
-      const maskCtx = maskCanvas.getContext("2d");
-      if (!maskCtx) {
-        results.close();
-        return;
-      }
-      let maskImageData = maskImageDataRef.current;
-      if (
-        !maskImageData ||
-        maskImageData.width !== segmentWidth ||
-        maskImageData.height !== segmentHeight
-      ) {
-        maskImageData = maskCtx.createImageData(segmentWidth, segmentHeight);
-        maskImageDataRef.current = maskImageData;
-      }
-      const data = maskImageData.data;
-      for (let index = 0; index < maskValues.length; index += 1) {
-        data[index * 4 + 3] = maskValues[index] > 0.5 ? 255 : 0;
-      }
-      maskCtx.putImageData(maskImageData, 0, 0);
-      ctx.globalCompositeOperation = "destination-in";
-      ctx.drawImage(maskCanvas, 0, 0, targetWidth, targetHeight);
-      ctx.globalCompositeOperation = "source-over";
-      results.close();
-    };
-    transparentFrameIdRef.current = requestAnimationFrame(loop);
-  }
-
-  function resetTransparentBackground() {
-    if (transparentFrameIdRef.current) {
-      cancelAnimationFrame(transparentFrameIdRef.current);
-      transparentFrameIdRef.current = 0;
-    }
-    transparentEnabledRef.current = false;
-    if (segmenterRef.current) {
-      try {
-        segmenterRef.current.close();
-      } catch {
-        // ignore close failures during teardown
-      }
-      segmenterRef.current = null;
-    }
-    segmenterInitPromiseRef.current = null;
-    setIsTransparentReady(false);
   }
 
   function beginPipDrag(event: ReactPointerEvent<HTMLElement>) {
@@ -968,9 +762,8 @@ export function DigitalHumanPanel({
       ) : null}
       <ScenicStageFrame>
         <LotusWatermark />
-        <div className={`live-stage${isTransparentReady ? " is-transparent-ready" : ""}`}>
+        <div className="live-stage">
           <video ref={videoRef} autoPlay playsInline muted className="live-video" />
-          <canvas ref={transparentCanvasRef} className="transparent-live-canvas" aria-hidden="true" />
           <audio ref={audioRef} autoPlay />
           {connectionState !== "connected" ? (
             <div className="live-placeholder">
